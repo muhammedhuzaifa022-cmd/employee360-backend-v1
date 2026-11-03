@@ -1,0 +1,25 @@
+# ---- Web framework & server ----
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+
+# ---- Database ----
+SQLAlchemy==2.1.6
+psycopg[binary]==3.3.6
+alembic==1.20.1
+
+# ---- Validation & settings ----
+pydantic==2.14.2
+pydantic-settings==2.16.2
+email-validator==2.3.0
+python-multipart==0.0.33   # login form in Swagger "Authorize"
+
+# ---- Security (used from Module 3) ----
+PyJWT==2.15.1
+pwdlib[argon2]==0.3.1
+
+# ---- Time zones (Windows has no built-in time zone database) ----
+tzdata==2026.6
+
+# ---- Testing ----
+pytest==9.2.0
+httpx2==2.16.0

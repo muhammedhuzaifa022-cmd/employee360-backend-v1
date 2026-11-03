@@ -1,0 +1,2087 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Employee360</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+--bg:#f3f5fa;--bg2:#eaeef7;--card:#fff;--card2:#f8f9fd;
+--ink:#0f172a;--ink2:#334155;--mute:#6b7688;--line:#e4e9f2;
+--acc:#4f46e5;--acc-ink:#fff;--acc-soft:#eef0ff;--acc-line:#d9dbff;
+--ok:#0d9b74;--ok-soft:#e4f7f0;--warn:#c07a12;--warn-soft:#fdf2e0;
+--bad:#dc4b4b;--bad-soft:#fdeceb;--blue:#2f6fd0;--blue-soft:#e8f0fd;
+--shadow-sm:0 1px 2px rgba(15,23,42,.05);
+--shadow:0 6px 20px rgba(15,23,42,.07);
+--shadow-lg:0 24px 60px rgba(15,23,42,.18);
+--r:16px;--r-sm:11px;--ease:cubic-bezier(.32,.72,.35,1);
+}
+[data-theme="dark"]{
+--bg:#0b101b;--bg2:#0f1626;--card:#151c2b;--card2:#1a2233;
+--ink:#eaeef8;--ink2:#c3cbdb;--mute:#8b96ab;--line:#263045;
+--acc:#8b85ff;--acc-ink:#0b101b;--acc-soft:#232248;--acc-line:#33316b;
+--ok:#4dd2a4;--ok-soft:#123027;--warn:#f0bb62;--warn-soft:#33260f;
+--bad:#ff8484;--bad-soft:#35191b;--blue:#7cb0ff;--blue-soft:#14243d;
+--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow:0 8px 26px rgba(0,0,0,.35);
+--shadow-lg:0 28px 70px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14.5px/1.55 "Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;transition:background .25s var(--ease),color .25s var(--ease)}
+h1,h2,h3,h4,p{margin:0}a{color:inherit;text-decoration:none}
+button,input,select,textarea{font:inherit;color:inherit}
+svg.ic{width:18px;height:18px;flex:none;display:block}
+::selection{background:var(--acc);color:var(--acc-ink)}
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--mute);background-clip:content-box}
+*::-webkit-scrollbar-track{background:transparent}
+.shell{display:flex;min-height:100vh}
+.side{width:252px;flex:none;position:sticky;top:0;height:100vh;overflow:auto;background:var(--card);border-right:1px solid var(--line);padding:20px 13px 16px;display:flex;flex-direction:column;gap:2px;transition:background .25s var(--ease),border-color .25s var(--ease)}
+.brand{display:flex;align-items:center;gap:11px;padding:2px 8px 20px}
+.logo{width:38px;height:38px;flex:none;border-radius:12px;display:grid;place-items:center;background:linear-gradient(140deg,var(--acc),color-mix(in srgb,var(--acc) 55%,#ff7bd5));color:#fff;font-size:18px;font-weight:800;box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 38%,transparent)}
+.brand b{display:block;font-size:15.5px;letter-spacing:-.4px;font-weight:800;line-height:1.2}
+.brand small{display:block;color:var(--mute);font-size:10.5px;font-weight:600;letter-spacing:.2px;margin-top:2px}
+.nav{display:flex;flex-direction:column;gap:2px;flex:1}
+.nav a{display:flex;align-items:center;gap:11px;padding:9.5px 12px;border-radius:11px;color:var(--mute);font-weight:600;font-size:13.5px;cursor:pointer;transition:background .16s var(--ease),color .16s var(--ease),transform .16s var(--ease);position:relative;user-select:none}
+.nav a:hover{background:var(--bg2);color:var(--ink)}
+.nav a:active{transform:scale(.985)}
+.nav a.on{background:var(--acc-soft);color:var(--acc);font-weight:750}
+.nav a.on::before{content:'';position:absolute;left:-13px;top:50%;transform:translateY(-50%);width:3px;height:20px;border-radius:0 4px 4px 0;background:var(--acc)}
+.nav .badge{margin-left:auto;min-width:19px;height:19px;padding:0 6px;border-radius:99px;background:var(--bad);color:#fff;font-size:10.5px;font-weight:800;display:grid;place-items:center;line-height:1}
+.side-foot{border-top:1px solid var(--line);margin-top:10px;padding-top:9px;display:flex;flex-direction:column;gap:2px}
+.side-btn{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:11px;border:0;background:transparent;color:var(--mute);font-weight:600;font-size:13px;cursor:pointer;width:100%;text-align:left;transition:.16s var(--ease)}
+.side-btn:hover{background:var(--bg2);color:var(--ink)}
+main{flex:1;min-width:0;padding:26px clamp(16px,2.6vw,38px) 60px;max-width:1560px;margin:0 auto;width:100%}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.top h1{font-size:clamp(21px,2.4vw,27px);letter-spacing:-.9px;font-weight:800;line-height:1.2}
+.top .sub{color:var(--mute);font-size:12.5px;margin-top:4px;font-weight:500}
+.who-chip{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:5px 14px 5px 5px;box-shadow:var(--shadow-sm);cursor:pointer;transition:.16s var(--ease)}
+.who-chip:hover{border-color:var(--acc)}
+.who-chip b{display:block;font-size:12.5px;font-weight:750;line-height:1.2}
+.who-chip span.role{display:block;font-size:10.5px;color:var(--mute);font-weight:600;text-transform:capitalize}
+.av{--h:250;width:32px;height:32px;flex:none;border-radius:50%;display:inline-grid;place-items:center;font-size:11.5px;font-weight:800;letter-spacing:.2px;background:hsl(var(--h) 85% 93%);color:hsl(var(--h) 55% 34%);border:1px solid hsl(var(--h) 70% 88%)}
+[data-theme="dark"] .av{background:hsl(var(--h) 38% 22%);color:hsl(var(--h) 78% 78%);border-color:hsl(var(--h) 32% 32%)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow-sm);transition:background .25s var(--ease),border-color .25s var(--ease),box-shadow .2s var(--ease),transform .2s var(--ease)}
+.card h3{font-size:14.5px;font-weight:750;letter-spacing:-.2px;margin:0 0 12px}
+.card h3.tight{margin-bottom:2px}
+.card .hint{font-size:12px;color:var(--mute);margin:-8px 0 14px;font-weight:500}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(158px,1fr))}
+.stack{display:flex;flex-direction:column;gap:12px}
+.stat{position:relative;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow-sm);transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
+.stat:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.stat .k{font-size:11.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.6px}
+.stat .v{font-size:29px;font-weight:800;letter-spacing:-1.2px;line-height:1.15;margin-top:5px}
+.stat .ico{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc)}
+.stat.ok .ico{background:var(--ok-soft);color:var(--ok)}
+.stat.bad .ico{background:var(--bad-soft);color:var(--bad)}
+.stat.warn .ico{background:var(--warn-soft);color:var(--warn)}
+.stat.blue .ico{background:var(--blue-soft);color:var(--blue)}
+.stat.alert{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.stat.alert .v{color:var(--bad)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--acc);color:var(--acc-ink);border:1px solid transparent;border-radius:10px;padding:9px 15px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 3px 10px color-mix(in srgb,var(--acc) 24%,transparent);transition:transform .14s var(--ease),filter .14s var(--ease),box-shadow .14s var(--ease),background .16s var(--ease);white-space:nowrap}
+.btn:hover{filter:brightness(1.07);transform:translateY(-1px);box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 30%,transparent)}
+.btn:active{transform:translateY(0) scale(.985)}
+.btn.ghost{background:var(--card);color:var(--ink2);border-color:var(--line);box-shadow:var(--shadow-sm)}
+.btn.ghost:hover{background:var(--bg2);color:var(--ink);border-color:color-mix(in srgb,var(--acc) 30%,var(--line))}
+.btn.ok{background:var(--ok);box-shadow:0 3px 10px color-mix(in srgb,var(--ok) 24%,transparent)}
+.btn.bad{background:var(--bad);box-shadow:0 3px 10px color-mix(in srgb,var(--bad) 24%,transparent)}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
+.btn.xs{padding:4px 9px;font-size:11.5px;border-radius:8px}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none!important}
+label{display:block;font-size:12px;font-weight:700;color:var(--mute);margin:14px 0 6px;letter-spacing:.1px}
+label:first-child{margin-top:0}
+input,select,textarea{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9.5px 12px;width:100%;min-height:41px;font-size:13.5px;font-weight:500;transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .2s var(--ease)}
+textarea{resize:vertical;min-height:70px;line-height:1.5}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--acc);background:var(--card);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 16%,transparent)}
+select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 16px) 18px,calc(100% - 11px) 18px;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:32px}
+select[multiple]{background-image:none;padding-right:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>*{width:auto}
+.row.grow>*{flex:1;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3.5px 9px;border-radius:99px;font-size:11px;font-weight:750;letter-spacing:.1px;white-space:nowrap;background:var(--bg2);color:var(--mute);border:1px solid transparent}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.blue{background:var(--blue-soft);color:var(--blue)}
+.tag.acc{background:var(--acc-soft);color:var(--acc)}
+.tag.mute{background:var(--bg2);color:var(--mute)}
+.tag.High{background:var(--bad-soft);color:var(--bad)}
+.tag.Medium{background:var(--warn-soft);color:var(--warn)}
+.tag.Low{background:var(--bg2);color:var(--mute)}
+.bar{height:7px;background:var(--bg2);border-radius:99px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:99px;transition:width .7s var(--ease)}
+.bar.ok i{background:var(--ok)}.bar.warn i{background:var(--warn)}.bar.bad i{background:var(--bad)}
+.ring{width:54px;height:54px;flex:none;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3.6;stroke-linecap:round}
+.ring .bg{stroke:var(--line)}
+.ring .fg{stroke:var(--acc);transition:stroke-dasharray .9s var(--ease)}
+.tcard{display:flex;align-items:center;gap:14px;padding:13px 16px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);cursor:pointer;transition:border-color .16s var(--ease),box-shadow .16s var(--ease),transform .16s var(--ease),background .16s var(--ease)}
+.tcard:hover{border-color:color-mix(in srgb,var(--acc) 40%,var(--line));box-shadow:var(--shadow);transform:translateY(-1px)}
+.tcard:active{transform:translateY(0)}
+.tcard .lead{width:4px;align-self:stretch;border-radius:99px;background:var(--line);flex:none}
+.tcard.p-high .lead{background:var(--bad)}
+.tcard.p-medium .lead{background:var(--warn)}
+.tcard.p-low .lead{background:var(--line)}
+.tcard .body{flex:1;min-width:0}
+.tcard .title{font-weight:700;font-size:13.5px;letter-spacing:-.15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tcard .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--mute);font-size:11.5px;font-weight:550;margin-top:4px}
+.tcard .meta .sep{opacity:.4}
+.tcard .right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+.due{font-size:11.5px;font-weight:750;color:var(--mute);white-space:nowrap}
+.due.over{color:var(--bad)}.due.today{color:var(--warn)}
+.mini{width:auto;min-height:0;padding:5px 26px 5px 9px;font-size:11.5px;font-weight:700;border-radius:8px;background:var(--card2);background-position:calc(100% - 13px) 12px,calc(100% - 8px) 12px;background-size:4px 4px,4px 4px}
+.sechead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.sechead h2{font-size:15.5px;font-weight:800;letter-spacing:-.4px;display:flex;align-items:center;gap:9px}
+.sechead .count{font-size:11px;font-weight:800;background:var(--bad);color:#fff;border-radius:99px;padding:1px 8px;line-height:1.7}
+.sechead .count.n{background:var(--bg2);color:var(--mute)}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{padding:7px 14px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--mute);cursor:pointer;transition:.16s var(--ease);white-space:nowrap}
+.chip:hover{border-color:color-mix(in srgb,var(--acc) 40%,var(--line));color:var(--ink)}
+.chip.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);box-shadow:0 3px 10px color-mix(in srgb,var(--acc) 26%,transparent)}
+.empty{text-align:center;padding:34px 18px;color:var(--mute)}
+.empty .eic{width:52px;height:52px;border-radius:16px;background:var(--bg2);color:var(--mute);display:grid;place-items:center;margin:0 auto 12px}
+.empty b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
+.empty p{font-size:12.5px;margin:0 0 14px}
+.calwrap{display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:16px;align-items:start}
+.calbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.calbar .mname{font-weight:800;font-size:15px;letter-spacing:-.3px;min-width:150px;text-align:center}
+.mg{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--line)}
+.mg>div{background:var(--card);border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-height:96px;padding:6px;cursor:pointer;position:relative;transition:background .14s var(--ease)}
+.mg>div:nth-child(7n){border-right:0}
+.mg>div:hover{background:var(--card2)}
+.mg>.dh{min-height:0;cursor:default;text-align:center;color:var(--mute);font-weight:800;font-size:10.5px;padding:9px 4px;text-transform:uppercase;letter-spacing:.7px;background:var(--card2)}
+.mg>.out{background:var(--bg2);opacity:.55}
+.mg>.sel{box-shadow:inset 0 0 0 2px var(--acc);z-index:2}
+.mg .dn{font-weight:750;font-size:12px;display:inline-grid;place-items:center;min-width:23px;height:23px;border-radius:50%;margin-bottom:2px}
+.mg .tod .dn{background:var(--acc);color:var(--acc-ink);font-weight:800}
+.mg .ct{display:block;font-size:9.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0;padding:2.5px 5px;border-radius:5px;background:var(--acc-soft);color:var(--acc);border-left:2.5px solid var(--acc);line-height:1.4}
+.mg .ct.High{background:var(--bad-soft);color:var(--bad);border-left-color:var(--bad)}
+.mg .ct.Low{background:var(--bg2);color:var(--mute);border-left-color:var(--mute)}
+.mg .more{font-size:10px;color:var(--acc);font-weight:800;padding-left:4px}
+.mg .ct[data-st="Completed"]{opacity:.55;text-decoration:line-through}
+.side-cal{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+.ti{border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:9px;cursor:pointer;transition:.16s var(--ease);background:var(--card2)}
+.ti:hover{border-color:color-mix(in srgb,var(--acc) 45%,var(--line));background:var(--card);transform:translateX(2px)}
+.ti b{font-size:13px;font-weight:750;display:block;letter-spacing:-.1px}
+.ti .m{font-size:11.5px;color:var(--mute);margin-top:3px;font-weight:550}
+.pcard{display:flex;flex-direction:column;gap:12px}
+.pcard .ph{display:flex;align-items:center;gap:11px}
+.pcard .ph .av{width:42px;height:42px;font-size:14px}
+.pcard .ph b{display:block;font-size:14px;font-weight:750;letter-spacing:-.2px;line-height:1.25}
+.pcard .ph small{display:block;font-size:11.5px;color:var(--mute);font-weight:600;margin-top:1px}
+.pcard .nums{display:flex;gap:6px;flex-wrap:wrap}
+.proj-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}
+.proj-top h3{margin:0;font-size:15px;letter-spacing:-.3px}
+.proj-desc{font-size:12.5px;color:var(--mute);margin:0 0 14px;font-weight:500;line-height:1.5}
+.teamline{display:flex;align-items:center;margin-top:2px}
+.teamline .av{width:26px;height:26px;font-size:10px;margin-right:-7px;border:2px solid var(--card)}
+.ltype{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.ltype button{padding:13px 6px;border-radius:12px;border:1px solid var(--line);background:var(--card2);cursor:pointer;font-weight:700;font-size:11.5px;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:6px;transition:.16s var(--ease)}
+.ltype button:hover{border-color:var(--acc);color:var(--ink);transform:translateY(-1px)}
+.ltype button.on{background:var(--acc-soft);border-color:var(--acc);color:var(--acc)}
+.ltype svg{width:22px;height:22px}
+.daycount{background:var(--acc-soft);color:var(--acc);border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:750;text-align:center;margin-top:14px;border:1px dashed var(--acc-line)}
+.lcard{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card);margin-bottom:10px;transition:.18s var(--ease)}
+.lcard:hover{box-shadow:var(--shadow-sm)}
+.lcard.pending{border-color:color-mix(in srgb,var(--warn) 42%,var(--line));background:linear-gradient(180deg,var(--warn-soft),var(--card) 62%)}
+.lcard-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.lcard-head b{font-size:13.5px;font-weight:750}
+.lcard-dates{font-size:13.5px;font-weight:750;letter-spacing:-.15px;color:var(--ink);margin-bottom:3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.lcard-dates span{color:var(--mute);font-weight:600;font-size:12px}
+.lcard-reason{font-size:12.5px;color:var(--mute);margin:0;line-height:1.5}
+.lcard-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.lcard-actions .btn{flex:1;min-width:100px}
+.modal{position:fixed;inset:0;background:color-mix(in srgb,#060a14 62%,transparent);display:flex;align-items:flex-start;justify-content:center;padding:5vh 14px;overflow:auto;z-index:80;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .2s var(--ease)}
+.modal.on{opacity:1;pointer-events:auto}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:20px;width:100%;max-width:540px;box-shadow:var(--shadow-lg);transform:translateY(14px) scale(.985);opacity:0;transition:transform .28s var(--ease),opacity .22s var(--ease);max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal.on .modal-card{transform:none;opacity:1}
+.modal-head{display:flex;align-items:flex-start;gap:12px;padding:20px 22px 0}
+.modal-head h3{font-size:17px;font-weight:800;letter-spacing:-.4px;line-height:1.3;flex:1}
+.modal-head .sub{font-size:12.5px;color:var(--mute);margin-top:3px;font-weight:550}
+.x{width:32px;height:32px;flex:none;border-radius:9px;border:1px solid var(--line);background:var(--card2);color:var(--mute);cursor:pointer;display:grid;place-items:center;font-size:13px;transition:.15s var(--ease)}
+.x:hover{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.modal-body{padding:16px 22px;overflow:auto;flex:1}
+.modal-foot{display:flex;gap:9px;justify-content:flex-end;padding:14px 22px 20px;border-top:1px solid var(--line);background:var(--card2);flex-wrap:wrap}
+.modal-foot .btn{flex:0 0 auto}
+@media(max-width:520px){.modal-foot .btn{flex:1}}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.kv>div{background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.kv span{display:block;font-size:10.5px;font-weight:800;color:var(--mute);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.kv b{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;letter-spacing:-.1px}
+@media(max-width:460px){.kv{grid-template-columns:1fr}}
+.cmt{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}
+.cmt:last-child{border-bottom:0}
+.cmt .cbody{flex:1;min-width:0}
+.cmt .cbody b{font-size:12.5px;font-weight:750}
+.cmt .cbody p{font-size:13px;margin:2px 0 0;line-height:1.5;word-break:break-word}
+.hist{list-style:none;margin:0;padding:0;font-size:12px;color:var(--mute);font-weight:550}
+.hist li{padding:5px 0 5px 16px;position:relative;line-height:1.45}
+.hist li::before{content:'';position:absolute;left:2px;top:11px;width:5px;height:5px;border-radius:50%;background:var(--line)}
+.hist li:first-child::before{background:var(--acc)}
+input[type=range]{-webkit-appearance:none;appearance:none;height:34px;background:transparent;padding:0;min-height:34px;border:0;box-shadow:none!important}
+input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:99px;background:var(--bg2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--acc);border:3px solid var(--card);box-shadow:0 2px 8px rgba(0,0,0,.25);margin-top:-7px;cursor:grab}
+input[type=range]::-moz-range-track{height:8px;border-radius:99px;background:var(--bg2)}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--acc);border:3px solid var(--card);cursor:grab}
+.rangeout{text-align:center;font-size:26px;font-weight:800;letter-spacing:-1px;color:var(--acc);line-height:1.1;margin-top:2px}
+.toasts{position:fixed;right:18px;bottom:18px;z-index:120;display:flex;flex-direction:column;gap:9px;align-items:flex-end;pointer-events:none}
+.toast{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:11px;padding:11px 15px;font-size:13px;font-weight:650;box-shadow:var(--shadow-lg);max-width:340px;animation:toastIn .3s var(--ease) both}
+.toast.bad{border-left-color:var(--bad)}
+.toast.warn{border-left-color:var(--warn)}
+.toast.out{animation:toastOut .25s var(--ease) both}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateX(20px) scale(.97)}}
+.login{min-height:100vh;display:grid;place-items:center;padding:24px 16px;position:relative;overflow:hidden}
+.login::before{content:'';position:absolute;width:640px;height:640px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--acc) 22%,transparent),transparent 68%);top:-280px;right:-200px;pointer-events:none}
+.login::after{content:'';position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--ok) 16%,transparent),transparent 68%);bottom:-260px;left:-180px;pointer-events:none}
+.loginbox{width:100%;max-width:440px;position:relative;z-index:1;animation:rise .5s var(--ease) both}
+.loginbox .logo{width:52px;height:52px;border-radius:16px;font-size:24px;margin-bottom:16px}
+.loginbox h1{font-size:27px;font-weight:800;letter-spacing:-1.2px;line-height:1.15}
+.loginbox .tagline{color:var(--mute);font-size:13.5px;margin:6px 0 22px;font-weight:550}
+.acct{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-bottom:8px;padding:11px 14px;background:var(--card2);border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:.16s var(--ease)}
+.acct:hover{background:var(--card);border-color:var(--acc);transform:translateX(2px);box-shadow:var(--shadow)}
+.acct .av{width:36px;height:36px;font-size:13px}
+.acct b{display:block;font-size:13.5px;font-weight:750;letter-spacing:-.1px}
+.acct small{display:block;font-size:11px;color:var(--mute);font-weight:650;text-transform:capitalize;margin-top:1px}
+.acct .arw{margin-left:auto;color:var(--mute);font-size:16px;transition:transform .16s var(--ease)}
+.acct:hover .arw{transform:translateX(3px);color:var(--acc)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.view{animation:fadeUp .3s var(--ease) both}
+.view > *{animation:rise .34s var(--ease) both}
+.view > *:nth-child(1){animation-delay:.02s}
+.view > *:nth-child(2){animation-delay:.05s}
+.view > *:nth-child(3){animation-delay:.08s}
+.view > *:nth-child(4){animation-delay:.11s}
+.view > *:nth-child(5){animation-delay:.14s}
+.view > *:nth-child(n+6){animation-delay:.17s}
+.stack > *,.grid > *{animation:rise .32s var(--ease) both}
+.stack > *:nth-child(2),.grid > *:nth-child(2){animation-delay:.04s}
+.stack > *:nth-child(3),.grid > *:nth-child(3){animation-delay:.07s}
+.stack > *:nth-child(n+4),.grid > *:nth-child(n+4){animation-delay:.1s}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:6px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+@media(max-width:1080px){.calwrap{grid-template-columns:1fr}.side-cal{position:static;max-height:none}}
+@media(max-width:860px){
+.shell{flex-direction:column}
+.side{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom));gap:2px;z-index:60;box-shadow:0 -6px 24px rgba(15,23,42,.08);scrollbar-width:none}
+.side::-webkit-scrollbar{display:none}
+.brand,.side-foot{display:none}
+.nav{flex-direction:row;gap:2px;flex:1}
+.nav a{flex-direction:column;gap:3px;font-size:10px;padding:7px 11px;min-width:62px;border-radius:10px;justify-content:center;font-weight:700}
+.nav a svg{width:19px;height:19px}
+.nav a.on::before{display:none}
+.nav .badge{position:absolute;top:2px;right:6px;margin:0;min-width:15px;height:15px;font-size:9px;padding:0 4px}
+main{padding:16px 14px 96px}
+.top{margin-bottom:16px}
+.card{padding:15px 16px;border-radius:14px}
+.stat{padding:14px 15px}
+.stat .v{font-size:25px}
+.stat .ico{width:28px;height:28px;right:11px;top:11px}
+.mg>div{min-height:66px;padding:4px}
+.mg .ct{font-size:9px;padding:2px 3px}
+.mg>.dh{font-size:9.5px;padding:7px 2px}
+.toasts{right:12px;left:12px;bottom:86px;align-items:stretch}
+.toast{max-width:none}
+.g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tcard{padding:11px 13px;gap:11px}
+.ltype{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:420px){
+.stat .v{font-size:22px}.stat .k{font-size:10px}
+.tcard .right{gap:4px}
+.who-chip .uinfo{display:none}.who-chip{padding:5px}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="modal" class="modal" onclick="if(event.target===this)closeM()"><div class="modal-card" id="mbody"></div></div>
+<div id="toasts" class="toasts"></div>
+
+<script>
+async function fetchRealData() {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+
+    const headers = {
+    'Authorization': `Bearer ${token}`
+    };
+
+    try {
+        // 1. Fetch Current User
+        const meRes = await fetch('http://127.0.0.1:8000/api/v1/auth/me', { headers });
+        if (!meRes.ok) throw new Error("Session expired");
+        const meData = await meRes.json();
+        
+        // Map backend user to frontend format
+        S.me = meData.id.toString(); // Keep ID as string for frontend matching
+
+        // 2. Fetch Users
+        const usersRes = await fetch('http://127.0.0.1:8000/api/v1/users?page_size=100', { headers });
+        const usersData = await usersRes.json();
+        S.users = usersData.items.map(u => ({
+            id: u.id.toString(),
+            name: u.full_name,
+            email: u.email,
+            role: u.role,
+            dept: u.department ? u.department.name : 'Management',
+            desig: u.designation || 'Associate',
+            active: u.is_active,
+            joined: u.joined_on
+        }));
+
+        // 3. Fetch Projects
+        const projRes = await fetch('http://127.0.0.1:8000/api/v1/projects', { headers });
+        const projData = await projRes.json();
+        S.projects = projData.items.map(p => ({
+            id: p.id.toString(),
+            name: p.name,
+            desc: p.description || '',
+            mgr: p.manager.id.toString(),
+            members: p.members.map(m => m.id.toString()),
+            start: p.start_date,
+            end: p.end_date,
+            prio: p.priority
+        }));
+
+        // 4. Fetch Tasks
+        const tasksRes = await fetch('http://127.0.0.1:8000/api/v1/tasks?page_size=100', { headers });
+        const tasksData = await tasksRes.json();
+        S.tasks = tasksData.items.map(t => ({
+            id: t.id.toString(),
+            title: t.title,
+            desc: t.description || '',
+            emp: t.assignee.id.toString(),
+            proj: t.project ? t.project.id.toString() : '',
+            start: t.start_date,
+            due: t.due_date,
+            prio: t.priority,
+            status: t.status,
+            by: t.assigned_by.id.toString(),
+            hours: t.estimated_hours,
+            hist: [], // Backend history can be loaded later if needed
+            com: [],
+            done: t.completed_on,
+            rating: t.rating
+        }));
+        // 5. Fetch Notifications
+        const notesRes = await fetch('http://127.0.0.1:8000/api/v1/notifications?page_size=100', { headers });
+        const notesData = await notesRes.json();
+        S.notes = notesData.items.map(n => ({
+        id: n.id.toString(),
+        text: n.message || n.title, 
+        read: n.is_read,
+        ts: new Date(n.created_at).toLocaleString(),
+        to: S.me // We only get our own notifications
+        }));
+
+// Save the real data to local storage so the UI uses it
+save();
+render(); // Refresh the UI with real data!
+toast('Data loaded from database');
+        // Save the real data to local storage so the UI uses it
+        save();
+        render(); // Refresh the UI with real data!
+        toast('Data loaded from database');
+
+    } catch (err) {
+        console.error(err);
+        alert("Could not load data: " + err.message);
+        logout();
+    }
+}
+/* ============ CONSTANTS ============ */
+const K='e360v2';
+const ST=['Not Started','In Progress','Submitted for Review','Completed','Delayed','On Hold'];
+const PR=['High','Medium','Low'];
+const LEAVE_TYPES=[
+{id:'Annual', icon:'sun', label:'Annual'},
+{id:'Sick', icon:'health', label:'Sick'},
+{id:'Casual', icon:'coffee', label:'Casual'},
+{id:'Unpaid', icon:'wallet', label:'Unpaid'}
+];
+
+/* ============ HELPERS ============ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso=d=>d.toISOString().slice(0,10);
+const addD=(s,n)=>{const d=new Date(s+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return iso(d)};
+const diff=(a,b)=>Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/864e5);
+const today=iso(new Date());
+const monday=s=>{const d=new Date(s+'T00:00:00Z');return addD(s,-((d.getUTCDay()+6)%7))};
+const fmtD=s=>s?new Date(s+'T00:00:00Z').toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'}):'---';
+const fmtLong=s=>new Date(s+'T00:00:00Z').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+const addMo=(m,n)=>{const d=new Date(m+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return iso(d)};
+
+/* ============ ICONS ============ */
+const IC={
+home:'<path d="M3.5 10.6 12 3.5l8.5 7.1"/><path d="M5.5 9.6V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.6"/>',
+tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6.2l.9.9L6.8 5M4 12.2l.9.9 1.9-2M4 18.2l.9.9 1.9-2"/>',
+cal:'<rect x="3" y="5" width="18" height="16" rx="3.2"/><path d="M8 3v4M16 3v4M3 10.2h18"/>',
+proj:'<path d="M3 7.5a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+team:'<circle cx="9.2" cy="8" r="3.3"/><path d="M3 20c0-3.4 2.8-5.6 6.2-5.6S15.4 16.6 15.4 20"/><path d="M16.3 5.2a3 3 0 0 1 0 5.6M17.6 14.7c2.1.6 3.4 2.4 3.4 4.9"/>',
+perf:'<path d="M4.5 20V11M9.8 20V4.5M15.2 20v-6.5M20.5 20V8"/><path d="M2.5 20h19"/>',
+load:'<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/>',
+inbox:'<path d="M3.2 13.2h4.6l1.4 2.8h5.6l1.4-2.8h4.6"/><path d="M5.4 4.8h13.2l2.2 8.4v3.6a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2v-3.6Z"/>',
+sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>',
+moon:'<path d="M20 14.2A8.5 8.5 0 0 1 9.8 4 8.6 8.6 0 1 0 20 14.2Z"/>',
+out:'<path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6"/>',
+check:'<path d="M4.5 12.5 9.5 17.5 19.5 6.5"/>',
+clock:'<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3 2"/>',
+alert:'<path d="M12 8.4v4.6M12 16.6h.01"/><path d="M10.3 3.9 2.7 17.1a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>',
+plus:'<path d="M12 5v14M5 12h14"/>',
+search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
+chat:'<path d="M20.5 11.5a7.8 7.8 0 0 1-11.3 7L4 20l1.6-4.8A7.8 7.8 0 1 1 20.5 11.5Z"/>',
+leave:'<rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/><path d="m9 15 2 2 4-4"/>',
+health:'<path d="M20.5 5.6a5.1 5.1 0 0 0-7.2 0L12 6.9l-1.3-1.3a5.1 5.1 0 0 0-7.2 7.2l1.3 1.3L12 21.3l7.2-7.2 1.3-1.3a5.1 5.1 0 0 0 0-7.2Z"/>',
+coffee:'<path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z"/><path d="M17 9h2.5a2.5 2.5 0 0 1 0 5H17"/><path d="M7 3v2M11 3v2M15 3v2"/>',
+wallet:'<path d="M3 8a2 2 0 0 1 2-2h12.5A1.5 1.5 0 0 1 19 7.5V9"/><path d="M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9H5a2 2 0 0 1-2-1Z"/><circle cx="16.5" cy="13.5" r="1.2" fill="currentColor" stroke="none"/>'
+};
+
+const icon=(k,extra='')=>`<svg class="ic ${extra}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">${IC[k]||''}</svg>`;
+
+/* ============ AVATARS ============ */
+const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))%360;return h};
+const avatar=(name,size)=>{
+const st=size?`width:${size}px;height:${size}px;font-size:${Math.round(size*.36)}px;`:'';
+return `<span class="av" style="--h:${hue(name)};${st}">${esc(initials(name))}</span>`;
+};
+
+/* ============ THEME ============ */
+(function(){
+let t=null;try{t=localStorage.getItem('e360-theme')}catch(e){}
+if(!t)t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.dataset.theme=t;
+})();
+
+function toggleTheme(){
+const r=document.documentElement;
+r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';
+try{localStorage.setItem('e360-theme',r.dataset.theme)}catch(e){}
+render();
+}
+
+/* ============ STATE ============ */
+let S=null, view='home';
+let calM=today.slice(0,8)+'01', selD=today;
+let flt={st:'',q:'',emp:'',dep:'',leave:''};
+
+function seed(){
+const u=(id,name,dept,role)=>({id,name,email:name.split(' ')[0].toLowerCase()+'@company.com',dept,role,desig:role==='employee'?'Associate':role==='teamlead'?'Team Lead':'Administrator',active:true,joined:'2025-01-06'});
+const t=(id,title,emp,pr,st,s,d,p,h,pri)=>({id,title,desc:'',emp,proj:pr,start:addD(today,s),due:addD(today,d),prio:pri||'Medium',status:st,by:'u2',hours:h,hist:[{at:today,t:'Created'}],com:[],done:st==='Completed'?addD(today,d):null,rating:st==='Completed'?85:null});
+
+return {
+me:null, uid:30,
+users:[
+u('u1','Aisha Khan','Management','admin'),
+u('u2','Rahul Verma','Engineering','teamlead'),
+u('u3','Mohammed Huzaifa','Engineering','employee'),
+u('u4','Priya Nair','Engineering','employee'),
+u('u5','Sana Ali','Design','employee')
+],
+projects:[{id:'p1',name:'Company Website',desc:'Public site rebuild',mgr:'u2',members:['u3','u4','u5'],start:addD(today,-20),end:addD(today,30),prio:'High'}],
+tasks:[
+t('t1','Website UI','u3','p1','Completed',-6,-4,0,8,'High'),
+t('t2','API work','u3','p1','In Progress',-1,2,0,10),
+t('t3','Database schema','u4','p1','Delayed',-8,-2,0,12,'High'),
+t('t4','Backend','u4','p1','In Progress',0,3,0,16),
+t('t5','Design system','u5','p1','Submitted for Review',-4,0,0,10),
+t('t6','Testing','u3','p1','Not Started',2,4,0,6,'Low')
+],
+leaves:[
+{id:'l1',emp:'u3',type:'Annual',from:addD(today,7),to:addD(today,9),days:3,reason:'Family trip.',status:'Pending',createdAt:addD(today,-1),decidedBy:null,decidedAt:null,comment:''},
+{id:'l2',emp:'u4',type:'Sick',from:addD(today,-3),to:addD(today,-2),days:2,reason:'Flu, doctor advised rest.',status:'Approved',createdAt:addD(today,-4),decidedBy:'u2',decidedAt:addD(today,-3),comment:''}
+],
+notes:[]
+};
+}
+
+function load(){
+try{S=JSON.parse(localStorage.getItem(K))}catch(e){}
+if(!S||!S.users||!S.leaves){
+  S=seed();
+}
+if(!S.leaves)S.leaves=[];
+if(!S.notes)S.notes=[];
+}
+
+function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
+
+/* ============ LOOKUPS ============ */
+const U=id=>S.users.find(x=>x.id===id)||{name:'---',dept:'',role:'employee',active:false,desig:''};
+const P=id=>S.projects.find(x=>x.id===id);
+const T=id=>S.tasks.find(x=>x.id===id);
+const L=id=>S.leaves.find(x=>x.id===id);
+const me=()=>U(S.me);
+const role=()=>me().role;
+const isAdmin=()=>role()==='admin';
+const canManage=()=>role()==='teamlead'||role()==='admin';
+const nid=p=>p+(S.uid++);
+const vis=()=>canManage()?S.tasks:S.tasks.filter(t=>t.emp===S.me);
+
+/* ============ DERIVED ============ */
+const od=t=>t.status!=='Completed'&&t.due<today;
+const stClass=s=>({'Completed':'ok','In Progress':'warn','Delayed':'bad','On Hold':'mute','Submitted for Review':'blue','Not Started':'mute'}[s]||'mute');
+const leaveClass=s=>({Approved:'ok',Rejected:'bad',Pending:'warn'}[s]||'mute');
+
+function dueMeta(t){
+if(t.status==='Completed')return{txt:'Done '+fmtD(t.done||t.due),cls:''};
+const d=diff(today,t.due);
+if(d<0)return{txt:Math.abs(d)+'d overdue',cls:'over'};
+if(d===0)return{txt:'Due today',cls:'today'};
+if(d===1)return{txt:'Due tomorrow',cls:'today'};
+if(d<=7)return{txt:d+' days left',cls:''};
+return{txt:'Due '+fmtD(t.due),cls:''};
+}
+
+function perf(e){
+const ts=S.tasks.filter(t=>t.emp===e);
+if(!ts.length)return null;
+const dn=ts.filter(t=>t.status==='Completed');
+const rated=dn.filter(t=>t.rating!=null);
+const c=dn.length/ts.length*100;
+const d=dn.length?dn.filter(t=>t.done<=t.due).length/dn.length*100:null;
+const m=rated.length?rated.reduce((a,t)=>a+t.rating,0)/rated.length:null;
+const parts=[[c,.5],[d,.3],[m,.2]].filter(x=>x[0]!==null);
+const w=parts.reduce((a,x)=>a+x[1],0);
+return{c,d,m,o:parts.reduce((a,x)=>a+x[0]*x[1],0)/w,done:dn.length,total:ts.length};
+}
+
+const pc=v=>v==null?'---':Math.round(v)+'%';
+const bar=(v,cls='')=>`<div class="bar ${cls}"><i style="width:${Math.max(0,Math.min(100,v||0))}%"></i></div>`;
+const ring=(v,size=54)=>{
+const val=Math.max(0,Math.min(100,v||0));
+const col=val>=80?'var(--ok)':val>=50?'var(--acc)':'var(--warn)';
+return `<svg class="ring" viewBox="0 0 36 36" style="width:${size}px;height:${size}px"><circle class="bg" cx="18" cy="18" r="15.9"></circle><circle class="fg" cx="18" cy="18" r="15.9" pathLength="100" stroke-dasharray="${val} 100" style="stroke:${col}"></circle></svg>`;
+};
+
+function note(to,text){S.notes.unshift({id:nid('n'),to,text,read:false,ts:new Date().toLocaleString()})}
+function log(t,m){t.hist.push({at:today,t:m+' · '+me().name})}
+
+/* ============ TOASTS ============ */
+function toast(msg,kind='ok'){
+const box=$('#toasts');
+const el=document.createElement('div');
+el.className='toast '+(kind==='ok'?'':kind);
+const ico=kind==='bad'?icon('alert'):kind==='warn'?icon('clock'):icon('check');
+el.innerHTML=`${ico}<span>${esc(msg)}</span>`;
+box.appendChild(el);
+setTimeout(()=>{el.classList.add('out');setTimeout(()=>el.remove(),260)},2600);
+}
+
+/* ============ MODAL ============ */
+function openModal({title='',sub='',body='',actions=[],width=540}){
+const m=$('#modal'),c=$('#mbody');
+c.style.maxWidth=width+'px';
+c.innerHTML=`
+<div class="modal-head"><div style="flex:1;min-width:0"><h3>${title}</h3>${sub?`<div class="sub">${sub}</div>`:''}</div><button class="x" onclick="closeM()" aria-label="Close">✕</button></div>
+<div class="modal-body">${body}</div>
+${actions.length?`<div class="modal-foot">${actions.map((a,i)=>`<button class="btn ${a.kind||'ghost'}" data-act="${i}">${a.label}</button>`).join('')}</div>`:''}
+`;
+c.querySelectorAll('[data-act]').forEach(btn=>{
+btn.onclick=()=>{
+const a=actions[+btn.dataset.act];
+const keep=a.onClick?a.onClick():undefined;
+if(keep!==false)closeM();
+};
+});
+m.classList.add('on');
+document.body.style.overflow='hidden';
+const first=c.querySelector('input,select,textarea');
+if(first&&window.innerWidth>760)setTimeout(()=>first.focus(),60);
+}
+
+function closeM(){
+$('#modal').classList.remove('on');
+document.body.style.overflow='';
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').classList.contains('on'))closeM()});
+
+function confirmAsk(title,text,ok='Confirm',kind='bad'){
+return new Promise(resolve=>{
+openModal({
+title,
+body:`<p style="font-size:13.5px;color:var(--ink2);line-height:1.6;margin:0">${text}</p>`,
+actions:[
+{label:'Cancel',kind:'ghost',onClick:()=>{resolve(false)}},
+{label:ok,kind,onClick:()=>{resolve(true)}}
+]
+});
+});
+}
+
+/* ============ ROUTER ============ */
+const VIEWS={home:homeView,tasks:tasksView,leaves:leavesView,calendar:calendarView,projects:projectsView,team:teamView,performance:perfView,workload:workloadView,inbox:inboxView};
+const TITLES={home:'Home',tasks:'Tasks',leaves:'Leave',calendar:'Calendar',projects:'Projects',team:'Team',performance:'Performance',workload:'Workload',inbox:'Inbox'};
+
+function render(){
+const R=$('#root');
+if(!S.me||!S.users.find(u=>u.id===S.me&&u.active)){R.innerHTML=authView();return}
+if(!VIEWS[view])view='home';
+const m=canManage();
+const unread=S.notes.filter(n=>n.to===S.me&&!n.read).length;
+const pendingLeaves=S.leaves.filter(l=>l.status==='Pending'&&l.emp!==S.me).length;
+const nav=[
+{id:'home',label:'Home',ico:'home'},
+{id:'tasks',label:m?'Tasks':'My tasks',ico:'tasks'},
+{id:'leaves',label:'Leave',ico:'leave',badge:m?pendingLeaves:0},
+{id:'calendar',label:'Calendar',ico:'cal'},
+{id:'projects',label:'Projects',ico:'proj'},
+...(m?[{id:'team',label:'Team',ico:'team'}]:[]),
+{id:'performance',label:'Performance',ico:'perf'},
+...(m?[{id:'workload',label:'Workload',ico:'load'}]:[]),
+{id:'inbox',label:'Inbox',ico:'inbox',badge:unread}
+];
+const u=me();
+const subline=new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})+' · '+(m?(isAdmin()?'Admin workspace':'Team lead workspace'):'Employee workspace');
+
+R.innerHTML=`
+<div class="shell">
+<aside class="side">
+<div class="brand"><div class="logo">✦</div><div><b>Employee360</b><small>${isAdmin()?'Admin':m?'Team lead':'Employee'} workspace</small></div></div>
+<div class="nav">
+${nav.map(n=>`<a class="${view===n.id?'on':''}" onclick="go('${n.id}')" title="${n.label}">${icon(n.ico)}<span>${n.label}</span>${n.badge?`<span class="badge">${n.badge}</span>`:''}</a>`).join('')}
+</div>
+<div class="side-foot">
+<button class="side-btn" onclick="toggleTheme()">${icon(document.documentElement.dataset.theme==='dark'?'sun':'moon')}<span>Theme</span></button>
+<button class="side-btn" onclick="logout()">${icon('out')}<span>Sign out</span></button>
+</div>
+</aside>
+<main>
+<div class="top">
+<div><h1>${TITLES[view]}</h1><div class="sub">${subline}</div></div>
+<div class="who-chip" onclick="go('inbox')" title="Notifications">${avatar(u.name,34)}<div class="uinfo"><b>${esc(u.name)}</b><span class="role">${u.role}</span></div></div>
+</div>
+<div class="view">${VIEWS[view]()}</div>
+</main>
+</div>
+`;
+}
+
+function go(v){view=v;render();window.scrollTo({top:0,behavior:'smooth'})}
+
+/* ============ AUTH ============ */
+function authView(){
+  return `
+  <div class="login"><div class="loginbox">
+    <div class="logo">✦</div>
+    <h1>Employee360</h1>
+    <p class="tagline">Welcome back. Please sign in.</p>
+    <div class="card">
+      <form id="loginForm" onsubmit="handleRealLogin(event)">
+        <label>Email address</label>
+        <input type="email" id="loginEmail" placeholder="e.g. aisha@company.com" required autocomplete="off">
+        
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="Enter your password" required>
+        
+        <button type="submit" class="btn" style="width:100%; margin-top:22px; padding:12px; font-size:14px;">
+          Sign In
+        </button>
+      </form>
+      <p style="font-size:11.5px;color:var(--mute);margin:16px 0 0;text-align:center;line-height:1.6">
+        <b>Demo Accounts:</b><br>
+        Admin: aisha@company.com (Admin@123)<br>
+        Team Lead: rahul@company.com (Lead@123)
+      </p>
+    </div>
+  </div></div>
+  `;
+}
+async function handleRealLogin(event) {
+    event.preventDefault(); // Stop page from reloading
+    
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    const btn = event.target.querySelector('button[type="submit"]');
+    
+    btn.textContent = "Signing in...";
+    btn.disabled = true;
+
+    try {
+        const formData = new URLSearchParams();
+        formData.append('username', email);
+        formData.append('password', password);
+
+        const res = await fetch('http://127.0.0.1:8000/api/v1/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        });
+
+        if (!res.ok) throw new Error("Incorrect email or password");
+        const data = await res.json();
+
+        localStorage.setItem('access_token', data.access_token);
+        
+        // Fetch the real user data from the DB
+        await fetchRealData(); 
+        toast('Welcome back!');
+
+    } catch (err) {
+        alert("Login failed: " + err.message);
+        btn.textContent = "Sign In";
+        btn.disabled = false;
+    }
+}
+
+
+
+function logout(){
+    S.me = null;
+    localStorage.removeItem('access_token');
+    localStorage.removeItem(K);
+    S=seed();
+    save();
+    render();
+}
+
+/* ============ HOME ============ */
+function homeView(){return canManage()?leadHome():employeeHome()}
+function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening'}
+
+function employeeHome(){
+const mine=S.tasks.filter(t=>t.emp===S.me);
+const open=mine.filter(t=>t.status!=='Completed');
+const overdue=open.filter(od);
+const dueToday=open.filter(t=>t.due===today);
+const soon=open.filter(t=>t.due>today&&t.due<=addD(today,7)).sort((a,b)=>a.due<b.due?-1:1);
+const focus=[...overdue,...dueToday].sort((a,b)=>a.due<b.due?-1:1);
+const inReview=mine.filter(t=>t.status==='Submitted for Review');
+const myLeaves=S.leaves.filter(l=>l.emp===S.me).sort((a,b)=>b.createdAt<a.createdAt?1:-1);
+const pendingLeaves=myLeaves.filter(l=>l.status==='Pending');
+const upcomingLeaves=myLeaves.filter(l=>l.status==='Approved'&&l.from>=today).sort((a,b)=>a.from<b.from?-1:1);
+const p=perf(S.me);
+const first=me().name.split(' ')[0];
+
+return `
+<div class="card" style="background:linear-gradient(135deg,var(--acc-soft),var(--card));border-color:var(--acc-line)">
+<div class="row" style="justify-content:space-between;align-items:center;gap:16px">
+<div style="flex:1;min-width:200px">
+<h2 style="font-size:clamp(17px,2.2vw,21px);font-weight:800;letter-spacing:-.7px;color:var(--acc)">${greeting()}, ${esc(first)} 👋</h2>
+<p style="font-size:13px;color:var(--ink2);margin-top:5px;font-weight:550">
+${focus.length?`You have <b>${focus.length}</b> task${focus.length>1?'s':''} that need attention today.`:open.length?`Nothing due today — ${open.length} task${open.length>1?'s':''} coming up.`:`All clear. Nothing on your plate right now. 🎉`}
+</p>
+</div>
+${p?`<div style="display:flex;align-items:center;gap:12px;flex:none">${ring(p.o,58)}<div><div style="font-size:10.5px;font-weight:800;color:var(--mute);text-transform:uppercase;letter-spacing:.6px">My score</div><div style="font-size:19px;font-weight:800;letter-spacing:-.6px">${pc(p.o)}</div></div></div>`:''}
+</div>
+</div>
+
+<div class="grid g4" style="margin-top:14px">
+${statTile('Open tasks',open.length,'tasks','acc')}
+${statTile('Due today',dueToday.length,'clock',dueToday.length?'warn':'')}
+${statTile('Overdue',overdue.length,'alert',overdue.length?'bad alert':'')}
+${statTile('Pending leave',pendingLeaves.length,'leave',pendingLeaves.length?'warn':'')}
+</div>
+
+${focus.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('alert')} Needs your attention <span class="count">${focus.length}</span></h2></div>
+<div class="stack">${focus.map(taskCard).join('')}</div>
+</div>
+`:''}
+
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('leave')} My leave</h2><button class="btn sm" onclick="leaveForm()">${icon('plus')} Request leave</button></div>
+${pendingLeaves.length||upcomingLeaves.length?`
+<div class="stack">
+${pendingLeaves.map(l=>leaveCard(l,false)).join('')}
+${upcomingLeaves.map(l=>leaveCard(l,false)).join('')}
+</div>
+`:emptyState('leave','No leave booked','Need a break? Request time off in seconds.','Request leave','leaveForm()')}
+</div>
+
+${soon.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('clock')} Coming up this week</h2></div>
+<div class="stack">${soon.slice(0,5).map(taskCard).join('')}</div>
+</div>
+`:''}
+
+${inReview.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('chat')} Waiting for review</h2></div>
+<div class="stack">${inReview.map(taskCard).join('')}</div>
+</div>
+`:''}
+`;
+}
+
+function leadHome(){
+const all=S.tasks;
+const open=all.filter(t=>t.status!=='Completed');
+const overdue=open.filter(od);
+const approvals=all.filter(t=>t.status==='Submitted for Review');
+const pendingLeaves=S.leaves.filter(l=>l.status==='Pending'&&l.emp!==S.me).sort((a,b)=>a.from<b.from?-1:1);
+const employees=S.users.filter(u=>u.role==='employee'&&u.active);
+const load=employees.map(u=>{
+const a=all.filter(t=>t.emp===u.id&&t.status!=='Completed');
+return{u,count:a.length,hours:a.reduce((s,t)=>s+t.hours,0),od:a.filter(od).length};
+}).sort((a,b)=>b.hours-a.hours);
+const maxH=Math.max(40,...load.map(l=>l.hours));
+const first=me().name.split(' ')[0];
+
+return `
+<div class="card" style="background:linear-gradient(135deg,var(--acc-soft),var(--card));border-color:var(--acc-line)">
+<h2 style="font-size:clamp(17px,2.2vw,21px);font-weight:800;letter-spacing:-.7px;color:var(--acc)">${greeting()}, ${esc(first)} 👋</h2>
+<p style="font-size:13px;color:var(--ink2);margin-top:5px;font-weight:550">
+${pendingLeaves.length?`<b>${pendingLeaves.length}</b> leave request${pendingLeaves.length>1?'s':''} waiting for you.`:approvals.length?`<b>${approvals.length}</b> task${approvals.length>1?'s':''} waiting for approval.`:overdue.length?`<b>${overdue.length}</b> task${overdue.length>1?'s':''} overdue across the team.`:`Your team is fully up to date. 🎉`}
+</p>
+</div>
+
+<div class="grid g4" style="margin-top:14px">
+${statTile('Leave requests',pendingLeaves.length,'leave',pendingLeaves.length?'warn alert':'')}
+${statTile('Task approvals',approvals.length,'chat',approvals.length?'warn':'')}
+${statTile('Overdue tasks',overdue.length,'alert',overdue.length?'bad alert':'')}
+${statTile('Team members',employees.length,'team','')}
+</div>
+
+${pendingLeaves.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('leave')} Leave requests waiting <span class="count">${pendingLeaves.length}</span></h2><button class="btn sm ghost" onclick="go('leaves')">See all</button></div>
+<div class="stack">${pendingLeaves.map(l=>leaveCard(l,true)).join('')}</div>
+</div>
+`:''}
+
+${approvals.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('chat')} Tasks waiting for approval <span class="count">${approvals.length}</span></h2><button class="btn sm ghost" onclick="go('tasks')">See all</button></div>
+<div class="stack">${approvals.map(taskCard).join('')}</div>
+</div>
+`:''}
+
+${overdue.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('alert')} Overdue across the team <span class="count">${overdue.length}</span></h2></div>
+<div class="stack">${overdue.slice(0,6).map(taskCard).join('')}</div>
+</div>
+`:''}
+
+<div class="grid g2" style="margin-top:22px">
+<div class="card">
+<h3>${icon('load')} Team workload</h3>
+${load.length?load.map(l=>`
+<div style="margin-bottom:13px">
+<div class="row" style="justify-content:space-between;margin-bottom:5px">
+<span style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700">${avatar(l.u.name,22)} ${esc(l.u.name)}</span>
+<span style="font-size:11.5px;font-weight:700;color:${l.hours>40?'var(--bad)':'var(--mute)'}">${l.count} tasks · ${l.hours}h${l.od?` · <span style="color:var(--bad)">${l.od} late</span>`:''}</span>
+</div>
+${bar(l.hours/maxH*100,l.hours>40?'bad':l.hours>30?'warn':'ok')}
+</div>`).join(''):'<p class="hint">No employees yet.</p>'}
+</div>
+
+<div class="card">
+<h3>${icon('perf')} Tasks by status</h3>
+${ST.map(s=>{
+const n=all.filter(t=>t.status===s).length;
+return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span style="font-size:12.5px;font-weight:650">${s}</span><b style="font-size:12.5px">${n}</b></div>${bar(all.length?n/all.length*100:0,s==='Completed'?'ok':s==='Delayed'?'bad':'')}`;
+}).join('')}
+</div>
+</div>
+`;
+}
+
+function statTile(label,value,ico,cls){
+return `<div class="stat ${cls||''}"><div class="ico">${icon(ico)}</div><div class="k">${label}</div><div class="v">${value}</div></div>`;
+}
+
+function emptyState(ico,title,text,cta,call){
+return `<div class="card"><div class="empty"><div class="eic">${icon(ico)}</div><b>${esc(title)}</b><p>${esc(text)}</p>${cta?`<button class="btn sm" onclick="${call}">${cta}</button>`:''}</div></div>`;
+}
+
+/* ============ TASK CARD ============ */
+function taskCard(t){
+const dm=dueMeta(t), emp=U(t.emp), mine=t.emp===S.me;
+const quick=mine&&!['Completed','Submitted for Review'].includes(t.status);
+
+return `
+<div class="tcard p-${t.prio.toLowerCase()}" onclick="showT('${t.id}')">
+<div class="lead"></div>
+<div class="body">
+<div class="title">${esc(t.title)}</div>
+<div class="meta">
+<span style="display:flex;align-items:center;gap:5px">${avatar(emp.name,18)} ${esc(emp.name.split(' ')[0])}</span>
+<span class="sep">·</span><span>${t.proj?esc(P(t.proj)?.name||'---'):'Independent'}</span>
+<span class="sep">·</span><span>${t.hours}h</span>
+</div>
+</div>
+<div class="right">
+<span class="tag ${stClass(t.status)}">${t.status}</span>
+<span class="due ${dm.cls}">${dm.txt}</span>
+</div>
+${quick?`<select class="mini" onclick="event.stopPropagation()" onchange="quickStatus('${t.id}', this.value)" title="Update status">${['Not Started','In Progress','On Hold','Delayed'].map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select>`:''}
+</div>
+`;
+}
+
+/* ============ TASKS VIEW ============ */
+function tasksView(){
+const m=canManage();
+let list=vis();
+if(flt.q){const q=flt.q.toLowerCase();list=list.filter(t=>(t.title+' '+U(t.emp).name+' '+(t.proj?(P(t.proj)?.name||''):'')).toLowerCase().includes(q))}
+if(flt.emp)list=list.filter(t=>t.emp===flt.emp);
+if(flt.st==='Overdue')list=list.filter(od);
+else if(flt.st==='Pending')list=list.filter(t=>t.status!=='Completed');
+else if(flt.st==='In review')list=list.filter(t=>t.status==='Submitted for Review');
+else if(flt.st==='Completed')list=list.filter(t=>t.status==='Completed');
+list=list.sort((a,b)=>a.due<b.due?-1:a.due>b.due?1:0);
+const chips=[['','All'],['Pending','Open'],['Overdue','Overdue'],['In review','In review'],['Completed','Completed']];
+const groups={};list.forEach(t=>{(groups[t.emp]=groups[t.emp]||[]).push(t)});
+const grouped=m&&!flt.emp;
+
+return `
+<div class="card" style="padding:14px 16px">
+<div class="row" style="justify-content:space-between">
+<div class="chips">${chips.map(([v,l])=>`<button class="chip ${flt.st===v?'on':''}" onclick="flt.st='${v}';render()">${l}</button>`).join('')}</div>
+${m?`<button class="btn" onclick="taskForm()">${icon('plus')} New task</button>`:''}
+</div>
+<div class="row" style="margin-top:12px">
+<div style="flex:1;min-width:180px;position:relative">
+<input placeholder="Search tasks, people or projects..." value="${esc(flt.q)}" oninput="flt.q=this.value;clearTimeout(window._sq);window._sq=setTimeout(render,220)" style="padding-left:36px">
+<span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mute)">${icon('search')}</span>
+</div>
+${m?`<select onchange="flt.emp=this.value;render()" style="width:auto;min-width:160px"><option value="">All people</option>${S.users.filter(u=>u.active&&u.role!=='admin').map(u=>`<option value="${u.id}" ${flt.emp===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>`:''}
+</div>
+</div>
+
+<div style="margin-top:16px">
+${list.length?(grouped
+?Object.keys(groups).map(e=>`<div style="margin-bottom:20px"><div class="sechead"><h2 style="display:flex;align-items:center;gap:9px">${avatar(U(e).name,26)} ${esc(U(e).name)}<span class="tag mute">${groups[e].length}</span></h2></div><div class="stack">${groups[e].map(taskCard).join('')}</div></div>`).join('')
+:`<div class="stack">${list.map(taskCard).join('')}</div>`)
+:`<div class="card">${emptyState('tasks','No tasks found','Try a different filter or create one.')}</div>`}
+</div>
+`;
+}
+
+/* ============ LEAVES VIEW ============ */
+function leavesView(){
+return canManage()?leadLeaves():myLeaves();
+}
+
+function myLeaves(){
+const all=S.leaves.filter(l=>l.emp===S.me).sort((a,b)=>b.createdAt<a.createdAt?1:-1);
+const pending=all.filter(l=>l.status==='Pending');
+const approved=all.filter(l=>l.status==='Approved');
+const rejected=all.filter(l=>l.status==='Rejected');
+const upcoming=approved.filter(l=>l.from>=today).sort((a,b)=>a.from<b.from?-1:1);
+const takenThisYear=approved.filter(l=>l.from.startsWith(today.slice(0,4))).reduce((s,l)=>s+l.days,0);
+
+return `
+<div class="card" style="background:linear-gradient(135deg,var(--acc-soft),var(--card));border-color:var(--acc-line);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+<div>
+<h3 class="tight" style="color:var(--acc)">${icon('leave')} Need time off?</h3>
+<p class="hint" style="margin:4px 0 0;color:var(--ink2)">Pick the dates, add a reason, submit — your team lead reviews it.</p>
+</div>
+<button class="btn" onclick="leaveForm()">${icon('plus')} Request leave</button>
+</div>
+
+<div class="grid g4" style="margin-top:14px">
+${statTile('Pending',pending.length,'clock',pending.length?'warn':'')}
+${statTile('Approved',approved.length,'check','ok')}
+${statTile('Rejected',rejected.length,'alert',rejected.length?'bad':'')}
+${statTile('Days this year',takenThisYear,'leave','blue')}
+</div>
+
+${upcoming.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('sun')} Upcoming time off</h2></div>
+<div class="stack">${upcoming.map(l=>leaveCard(l,false)).join('')}</div>
+</div>
+`:''}
+
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('leave')} My requests</h2></div>
+${all.length?`<div class="stack">${all.map(l=>leaveCard(l,false)).join('')}</div>`:emptyState('leave','No requests yet','Your leave history will appear here.')}
+</div>
+`;
+}
+function leadLeaves(){
+const all=S.leaves.slice().sort((a,b)=>b.createdAt<a.createdAt?1:-1);
+const pending=all.filter(l=>l.status==='Pending'&&l.emp!==S.me).sort((a,b)=>a.from<b.from?-1:1);
+const mine=all.filter(l=>l.emp===S.me);
+const filter=flt.leave||'';
+let list=all.filter(l=>l.emp!==S.me);
+if(filter)list=list.filter(l=>l.status===filter);
+const counts={
+Pending:all.filter(l=>l.status==='Pending'&&l.emp!==S.me).length,
+Approved:all.filter(l=>l.status==='Approved'&&l.emp!==S.me).length,
+Rejected:all.filter(l=>l.status==='Rejected'&&l.emp!==S.me).length
+};
+const chips=[['','All'],['Pending','Pending'],['Approved','Approved'],['Rejected','Rejected']];
+
+return `
+${pending.length?`
+<div class="card" style="background:linear-gradient(135deg,var(--warn-soft),var(--card));border-color:color-mix(in srgb,var(--warn) 40%,var(--line))">
+<div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div style="display:flex;align-items:center;gap:12px">
+<div style="width:38px;height:38px;border-radius:12px;background:var(--warn);color:#fff;display:grid;place-items:center">${icon('leave')}</div>
+<div>
+<h3 class="tight" style="font-size:15px">${pending.length} leave request${pending.length>1?'s':''} waiting</h3>
+<p class="hint" style="margin:2px 0 0;color:var(--ink2)">Review and approve to keep the team moving.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="stack" style="margin-top:14px">${pending.map(l=>leaveCard(l,true)).join('')}</div>
+`:''}
+
+${mine.length?`
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('leave')} My own requests</h2><button class="btn sm ghost" onclick="leaveForm()">${icon('plus')} Request leave</button></div>
+<div class="stack">${mine.map(l=>leaveCard(l,false)).join('')}</div>
+</div>
+`:''}
+
+<div style="margin-top:22px">
+<div class="sechead"><h2>${icon('team')} Team requests</h2></div>
+<div class="card" style="padding:12px 14px;margin-bottom:12px">
+<div class="row" style="justify-content:space-between">
+<div class="chips">${chips.map(([v,l])=>`<button class="chip ${filter===v?'on':''}" onclick="flt.leave='${v}';render()">${l}${v&&counts[v]!==undefined?` (${counts[v]})`:''}</button>`).join('')}</div>
+</div>
+</div>
+${list.length?`<div class="stack">${list.map(l=>leaveCard(l,true)).join('')}</div>`:emptyState('leave','Nothing here','No leave requests match this filter.')}
+</div>
+`;
+}
+
+function leaveCard(l,withActions){
+const emp=U(l.emp);
+const lt=LEAVE_TYPES.find(x=>x.id===l.type)||{icon:'leave'};
+const isPending=l.status==='Pending';
+const showActions=withActions&&isPending&&l.emp!==S.me;
+return `
+<div class="lcard ${isPending&&withActions?'pending':''}">
+<div class="lcard-head">
+${avatar(emp.name,32)}
+<div style="flex:1;min-width:0">
+<b>${esc(emp.name)}</b>
+<div style="font-size:11.5px;color:var(--mute);font-weight:600;margin-top:1px">${esc(emp.dept)}</div>
+</div>
+<span class="tag acc" style="gap:5px">${icon(lt.icon)} ${l.type}</span>
+<span class="tag ${leaveClass(l.status)}">${l.status}</span>
+</div>
+<div class="lcard-dates">
+${icon('cal')} ${fmtD(l.from)} → ${fmtD(l.to)} <span>· ${l.days} day${l.days>1?'s':''}</span>
+</div>
+${l.reason?`<p class="lcard-reason">${esc(l.reason)}</p>`:''}
+${l.status!=='Pending'&&l.decidedBy?`<p class="lcard-reason" style="margin-top:6px;font-size:11.5px">${l.status==='Approved'?'Approved':'Rejected'} by ${esc(U(l.decidedBy).name)} · ${fmtD(l.decidedAt)}${l.comment?` · "${esc(l.comment)}"`:''}</p>`:''}
+${showActions?`<div class="lcard-actions">
+<button class="btn ok sm" onclick="approveLeave('${l.id}')">${icon('check')} Approve</button>
+<button class="btn bad sm" onclick="rejectLeave('${l.id}')">Reject</button>
+</div>`:''}
+</div>
+`;
+}
+
+/* ============ LEAVE FORMS ============ */
+function leaveForm(){
+const emp=S.me;
+let selected='Annual';
+const renderType=()=>LEAVE_TYPES.map(t=>`<button type="button" class="${t.id===selected?'on':''}" data-t="${t.id}" onclick="pickLeaveType('${t.id}')">${icon(t.icon)}<span>${t.label}</span></button>`).join('');
+
+openModal({
+title:'Request leave',
+sub:'Your team lead will review and respond.',
+body:`
+<label>Type of leave</label>
+<div class="ltype" id="ltypeBox">${renderType()}</div>
+<div class="row grow" style="gap:10px;margin-top:4px">
+<div style="flex:1"><label>From</label><input id="lf" type="date" value="${today}" min="${today}" oninput="updateLeaveDays()"></div>
+<div style="flex:1"><label>To</label><input id="lt" type="date" value="${today}" min="${today}" oninput="updateLeaveDays()"></div>
+</div>
+<div class="daycount" id="daycount">1 day</div>
+<label>Reason</label>
+<textarea id="lr" rows="3" placeholder="Optional — a short note helps your lead decide faster."></textarea>
+`,
+actions:[
+{label:'Cancel',kind:'ghost'},
+{label:'Submit request',kind:'primary',onClick:()=>{
+const from=$('#lf').value, to=$('#lt').value, reason=$('#lr').value.trim();
+if(!from||!to){toast('Pick both dates','bad');return false}
+if(to<from){toast('End date must be on or after start date','bad');return false}
+if(reason.length>0&&reason.length<3){toast('Reason too short','bad');return false}
+const days=diff(from,to)+1;
+const l={id:nid('l'),emp:S.me,type:selected,from,to,days,reason,status:'Pending',createdAt:today,decidedBy:null,decidedAt:null,comment:''};
+S.leaves.push(l);
+const approvers=S.users.filter(u=>u.active&&(u.role==='teamlead'||u.role==='admin')&&u.id!==S.me);
+if(approvers.length){
+approvers.forEach(a=>note(a.id,`${me().name} requested ${days} day${days>1?'s':''} ${selected.toLowerCase()} leave`));
+} else {
+S.users.filter(u=>u.active&&u.role==='admin').forEach(a=>note(a.id,`${me().name} requested leave (no approver available)`));
+}
+save();render();toast('Request sent for approval');
+}}
+]
+});
+
+window._pickType=t=>{selected=t;document.querySelectorAll('#ltypeBox button').forEach(b=>b.classList.toggle('on',b.dataset.t===t))};
+setTimeout(updateLeaveDays,30);
+}
+
+function pickLeaveType(t){if(window._pickType)window._pickType(t)}
+
+function updateLeaveDays(){
+const f=$('#lf')?.value,t=$('#lt')?.value;
+if(!f||!t)return;
+const el=$('#daycount');
+if(!el)return;
+if(t<f){el.textContent='End date is before start';el.style.background='var(--bad-soft)';el.style.color='var(--bad)';return}
+const d=diff(f,t)+1;
+el.textContent=`${d} day${d>1?'s':''}`;
+el.style.background='';el.style.color='';
+}
+
+function approveLeave(id){
+const l=L(id);
+if(!l||l.status!=='Pending')return;
+l.status='Approved';l.decidedBy=S.me;l.decidedAt=today;l.comment='';
+note(l.emp,`Your ${l.type.toLowerCase()} leave (${fmtD(l.from)} → ${fmtD(l.to)}) was approved`);
+save();render();toast('Leave approved');
+}
+
+function rejectLeave(id){
+const l=L(id);
+if(!l||l.status!=='Pending')return;
+openModal({
+title:'Reject leave request',
+sub:`${U(l.emp).name} · ${l.type} · ${fmtD(l.from)} → ${fmtD(l.to)}`,
+body:`
+<label>Reason (visible to employee)</label>
+<textarea id="rj" rows="3" placeholder="e.g. Clashes with release week — can we shift it?"></textarea>
+`,
+actions:[
+{label:'Cancel',kind:'ghost'},
+{label:'Reject request',kind:'bad',onClick:()=>{
+const r=$('#rj').value.trim();
+if(!r){toast('Add a reason first','bad');return false}
+l.status='Rejected';l.decidedBy=S.me;l.decidedAt=today;l.comment=r;
+note(l.emp,`Your ${l.type.toLowerCase()} leave (${fmtD(l.from)} → ${fmtD(l.to)}) was rejected: ${r}`);
+save();render();toast('Request rejected','warn');
+}}
+]
+});
+}
+
+/* ============ CALENDAR ============ */
+function calendarView(){
+const m=canManage();
+const first=monday(calM);
+const days=[...Array(42)].map((_,i)=>addD(first,i));
+const mo=calM.slice(0,7);
+const base=vis().filter(t=>!flt.emp||t.emp===flt.emp);
+const on=d=>base.filter(t=>t.start===d);
+const mname=new Date(calM+'T00:00:00Z').toLocaleDateString(undefined,{month:'long',year:'numeric',timeZone:'UTC'});
+const sel=on(selD).sort((a,b)=>a.due<b.due?-1:1);
+const sname=fmtLong(selD);
+const nm=t=>(m&&!flt.emp)?' · '+U(t.emp).name.split(' ')[0]:'';
+
+return `
+<div class="card" style="padding:13px 16px">
+<div class="calbar" style="margin-bottom:0">
+<button class="btn ghost sm" onclick="calM=addMo(calM,-1);render()">‹</button>
+<span class="mname">${mname}</span>
+<button class="btn ghost sm" onclick="calM=addMo(calM,1);render()">›</button>
+<button class="btn ghost sm" onclick="calM=today.slice(0,8)+'01';selD=today;render()">Today</button>
+<div style="flex:1"></div>
+${m?`<select onchange="flt.emp=this.value;render()" style="width:auto;min-width:160px"><option value="">All people</option>${S.users.filter(u=>u.active&&u.role!=='admin').map(u=>`<option value="${u.id}" ${flt.emp===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>`:''}
+</div>
+</div>
+
+<div class="calwrap" style="margin-top:14px">
+<div class="card" style="padding:14px">
+<div class="mg">
+${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="dh">${d}</div>`).join('')}
+${days.map(d=>{
+const l=on(d);
+return `<div class="${d.slice(0,7)!==mo?'out':''} ${d===today?'tod':''} ${d===selD?'sel':''}" onclick="selD='${d}';render()" ondragover="event.preventDefault()" ondrop="dropD(event,'${d}')">
+<span class="dn">${+d.slice(8)}</span>
+${l.slice(0,3).map(t=>`<a class="ct ${t.prio}" data-st="${t.status}" draggable="${m}" ondragstart="event.dataTransfer.setData('text/plain','${t.id}')" onclick="event.stopPropagation();showT('${t.id}')" title="${esc(t.title)}">${esc(t.title)}${nm(t)}</a>`).join('')}
+${l.length>3?`<span class="more">+${l.length-3} more</span>`:''}
+</div>`;
+}).join('')}
+</div>
+<p style="font-size:11.5px;color:var(--mute);margin:10px 0 0;font-weight:550">${m?'Drag a task onto another date to reschedule it instantly.':'Tap any date to see the tasks scheduled for it.'}</p>
+</div>
+
+<div class="card side-cal">
+<div class="sechead" style="margin-bottom:6px">
+<h2 style="font-size:14px">${sname}</h2>
+${m?`<button class="btn sm" onclick="taskForm('${flt.emp||''}','${selD}')">${icon('plus')} Assign</button>`:''}
+</div>
+<p style="font-size:11.5px;color:var(--mute);margin:0 0 12px;font-weight:600">${sel.length} task${sel.length===1?'':'s'} starting</p>
+${sel.length?sel.map(t=>`
+<div class="ti" onclick="showT('${t.id}')">
+<div class="row" style="justify-content:space-between;gap:6px"><b>${esc(t.title)}</b><span class="tag ${stClass(t.status)}" style="font-size:10px">${t.status}</span></div>
+<div class="m">${esc(U(t.emp).name)} · ${t.proj?esc(P(t.proj)?.name||'---'):'Independent'}</div>
+<div class="m">${fmtD(t.start)} → ${fmtD(t.due)} · ${t.hours}h</div>
+</div>`).join(''):emptyState('cal','Nothing scheduled','No tasks start on this date.')}
+</div>
+</div>
+`;
+}
+
+function dropD(e,d){
+e.preventDefault();
+if(!canManage())return;
+const t=T(e.dataTransfer.getData('text/plain'));
+if(!t||t.start===d)return;
+const len=diff(t.start,t.due);
+t.start=d;t.due=addD(d,len);
+log(t,'Rescheduled to '+fmtD(d));
+note(t.emp,'Task rescheduled: '+t.title);
+selD=d;save();render();toast('Rescheduled to '+fmtD(d));
+}
+
+/* ============ PROJECTS ============ */
+function projectsView(){
+const m=canManage();
+const list=S.projects.filter(p=>m||p.members.includes(S.me));
+return `
+${m?`<div class="card" style="padding:14px 16px"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">Projects</h3><p class="hint" style="margin:2px 0 0">${list.length} active</p></div><button class="btn" onclick="projForm()">${icon('plus')} New project</button></div></div>`:''}
+<div class="grid g2" style="margin-top:${m?'16px':'0'}">
+${list.length?list.map(p=>{
+const ts=S.tasks.filter(t=>t.proj===p.id);
+const done=ts.filter(t=>t.status==='Completed').length;
+const pr=ts.length?done/ts.length*100:0;
+const odc=ts.filter(od).length;
+return `<div class="card">
+<div class="proj-top"><h3>${esc(p.name)}</h3><span class="tag ${p.prio}">${p.prio}</span></div>
+<p class="proj-desc">${esc(p.desc)||'No description.'}</p>
+<div class="row" style="justify-content:space-between;margin-bottom:14px">
+<span style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:var(--mute)">${avatar(U(p.mgr).name,22)} ${esc(U(p.mgr).name)}</span>
+<span style="font-size:11.5px;font-weight:650;color:var(--mute)">${fmtD(p.start)} → ${fmtD(p.end)}</span>
+</div>
+${bar(pr,pr>=100?'ok':'')}
+<div class="row" style="justify-content:space-between;margin-top:10px">
+<span style="font-size:12px;font-weight:750">${Math.round(pr)}% complete</span>
+<span style="font-size:11.5px;font-weight:650;color:var(--mute)">${done}/${ts.length} tasks${odc?` · <span style="color:var(--bad);font-weight:800">${odc} late</span>`:''}</span>
+</div>
+<div class="teamline" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">${p.members.map(mid=>`<span title="${esc(U(mid).name)}">${avatar(U(mid).name,26)}</span>`).join('')||'<span style="font-size:11.5px;color:var(--mute)">No team members</span>'}</div>
+</div>`;
+}).join(''):emptyState('proj','No projects yet','Projects you belong to will show up here.')}
+</div>
+`;
+}
+
+/* ============ TEAM ============ */
+function teamView(){
+const deps=[...new Set(S.users.map(u=>u.dept))];
+const list=S.users.filter(u=>!flt.dep||u.dept===flt.dep);
+return `
+<div class="card" style="padding:14px 16px">
+<div class="row" style="justify-content:space-between">
+<div class="chips">
+<button class="chip ${!flt.dep?'on':''}" onclick="flt.dep='';render()">All</button>
+${deps.map(d=>`<button class="chip ${flt.dep===d?'on':''}" onclick="flt.dep='${esc(d)}';render()">${esc(d)}</button>`).join('')}
+</div>
+${isAdmin()?`<button class="btn" onclick="empForm()">${icon('plus')} Add employee</button>`:''}
+</div>
+</div>
+
+<div class="grid g3" style="margin-top:16px">
+${list.map(u=>{
+const mine=S.tasks.filter(t=>t.emp===u.id);
+const open=mine.filter(t=>t.status!=='Completed').length;
+const done=mine.filter(t=>t.status==='Completed').length;
+const late=mine.filter(od).length;
+const p=perf(u.id);
+return `<div class="card pcard">
+<div class="ph">${avatar(u.name,42)}<div style="flex:1;min-width:0"><b>${esc(u.name)}</b><small>${esc(u.desig||'Associate')} · ${esc(u.dept)}</small></div>${u.active?'':'<span class="tag mute">Inactive</span>'}</div>
+<div class="nums"><span class="tag acc">${open} open</span><span class="tag ok">${done} done</span>${late?`<span class="tag bad">${late} overdue</span>`:''}<span class="tag mute">${u.role}</span></div>
+${p?`<div><div class="row" style="justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:800;color:var(--mute);text-transform:uppercase;letter-spacing:.5px">Score</span><b style="font-size:12.5px">${pc(p.o)}</b></div>${bar(p.o,p.o>=80?'ok':p.o>=50?'':'warn')}</div>`:`<p style="font-size:11.5px;color:var(--mute);margin:0">No tasks yet</p>`}
+${isAdmin()&&u.id!==S.me?`<button class="btn ghost sm" onclick="togU('${u.id}')" style="width:100%">${u.active?'Deactivate':'Activate'}</button>`:''}
+</div>`;
+}).join('')}
+</div>
+`;
+}
+
+
+function empForm() {
+openModal({
+title: 'Add employee',
+sub: 'They can sign in immediately.',
+body: ` <label>Full name</label> <input id="f1" placeholder="e.g. Maya Patel">
+
+
+        <label>Email</label>
+        <input id="f2" type="email" placeholder="maya@company.com">
+
+        <label>Department</label>
+        <input id="f3" placeholder="e.g. Engineering">
+
+        <label>Role</label>
+        <select id="f4">
+            <option value="employee">Employee</option>
+            <option value="teamlead">Team lead</option>
+            <option value="admin">Admin</option>
+        </select>
+
+        <label>Password</label>
+        <input id="f5" type="password" placeholder="e.g. Welcome@123 (or leave blank to auto-generate)">
+    `,
+    actions: [
+        { label: 'Cancel', kind: 'ghost' },
+        {
+            label: 'Save employee',
+            kind: 'primary',
+            onClick: async () => {
+                const n = $('#f1').value.trim();
+                const em = $('#f2').value.trim();
+                const d = $('#f3').value.trim();
+                const r = $('#f4').value;
+                const pw = $('#f5').value.trim();
+
+                if (!n || !em || !d) {
+                    toast('Name, email and department are required', 'bad');
+                    return false;
+                }
+
+                const token = localStorage.getItem('access_token');
+
+                try {
+                    const payload = {
+                        full_name: n,
+                        email: em,
+                        department: d,
+                        role: r
+                    };
+
+                    if (pw) {
+                        payload.password = pw;
+                    }
+
+                    const res = await fetch('http://127.0.0.1:8000/api/v1/users', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Failed to add employee");
+                    }
+
+                    const data = await res.json();
+
+                    if (pw) {
+                        toast('Employee added with your custom password!');
+                    } else {
+                        alert(`Employee added! Auto-generated Temporary password: ${data.temporary_password}`);
+                    }
+
+                    await fetchRealData();
+
+                } catch (err) {
+                    alert("Error: " + err.message);
+                    return false;
+                }
+            }
+        }
+    ]
+});
+
+
+}
+
+
+
+function togU(id){
+const u=U(id);u.active=!u.active;save();render();
+toast(u.name+(u.active?' activated':' deactivated'),u.active?'ok':'warn');
+}
+
+/* ============ PERFORMANCE ============ */
+function perfView(){
+const list=canManage()?S.users.filter(u=>u.role==='employee'&&u.active):[me()];
+return `
+<div class="card" style="background:var(--card2)">
+<h3 class="tight" style="display:flex;align-items:center;gap:8px">${icon('perf')} How the score works</h3>
+<p class="hint" style="margin:6px 0 0">Overall = <b>Task completion × 50%</b> + <b>Deadline achievement × 30%</b> + <b>Manager evaluation × 20%</b>. Missing parts are left out and weights rescaled.</p>
+</div>
+
+<div class="grid g3" style="margin-top:16px">
+${list.map(u=>{
+const p=perf(u.id);
+return `<div class="card">
+<div class="row" style="gap:12px;margin-bottom:16px">${avatar(u.name,40)}<div style="flex:1;min-width:0"><b style="font-size:14px;font-weight:750;display:block">${esc(u.name)}</b><small style="font-size:11.5px;color:var(--mute);font-weight:600">${esc(u.dept)}</small></div>${p?ring(p.o,50):''}</div>
+${p?`<div style="text-align:center;margin-bottom:16px"><div style="font-size:30px;font-weight:800;letter-spacing:-1.4px;line-height:1">${pc(p.o)}</div><div style="font-size:11px;color:var(--mute);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-top:3px">Overall score</div></div>
+${[['Completion',p.c,'acc'],['Deadlines',p.d,'ok'],['Manager rating',p.m,'warn']].map(([lbl,val,cls])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;margin-bottom:4px"><span style="font-size:11.5px;font-weight:650;color:var(--mute)">${lbl}</span><b style="font-size:12px">${pc(val)}</b></div>${bar(val||0,cls)}</div>`).join('')}
+<div style="font-size:11.5px;color:var(--mute);font-weight:650;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">${p.done} of ${p.total} tasks completed</div>`:`<p style="font-size:12.5px;color:var(--mute);margin:0">No tasks assigned yet.</p>`}
+</div>`;
+}).join('')}
+</div>
+`;
+}
+
+/* ============ WORKLOAD ============ */
+function workloadView(){
+const es=S.users.filter(u=>u.role==='employee'&&u.active);
+const rows=es.map(u=>{
+const a=S.tasks.filter(t=>t.emp===u.id&&t.status!=='Completed');
+return{u,count:a.length,hours:a.reduce((s,t)=>s+t.hours,0),od:a.filter(od).length};
+}).sort((a,b)=>b.hours-a.hours);
+
+return `
+<div class="card">
+<h3 class="tight">${icon('load')} Current workload</h3>
+<p class="hint" style="margin:4px 0 18px">Open hours against a 40-hour week. Drag tasks in the calendar to rebalance.</p>
+${rows.length?rows.map(r=>{
+const ratio=r.hours/40;
+const cls=r.hours>40?'bad':r.hours>30?'warn':'ok';
+const label=r.hours>40?'Overloaded':r.hours>30?'Busy':r.hours>0?'Normal':'Free';
+return `<div style="margin-bottom:18px">
+<div class="row" style="justify-content:space-between;margin-bottom:6px">
+<span style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700">${avatar(r.u.name,26)} ${esc(r.u.name)}</span>
+<span class="tag ${cls}">${label}</span>
+</div>
+${bar(ratio*100,cls)}
+<div class="row" style="justify-content:space-between;margin-top:5px">
+<span style="font-size:11.5px;color:var(--mute);font-weight:600">${r.count} open task${r.count===1?'':'s'}</span>
+<span style="font-size:11.5px;font-weight:700;color:var(--mute)">${r.hours}h${r.od?` · <span style="color:var(--bad)">${r.od} overdue</span>`:''}</span>
+</div>
+</div>`;
+}).join(''):emptyState('team','No employees','Add team members to see workload.')}
+</div>
+`;
+}
+
+/* ============ INBOX ============ */
+function inboxView(){
+const list=S.notes.filter(n=>n.to===S.me);
+const unread=list.filter(n=>!n.read).length;
+return `
+<div class="card" style="padding:14px 16px">
+<div class="row" style="justify-content:space-between">
+<span style="font-size:12.5px;font-weight:700;color:var(--mute)">${unread?`${unread} unread notification${unread>1?'s':''}`:'You are all caught up'}</span>
+${unread?`<button class="btn ghost sm" onclick="markAll()">Mark all as read</button>`:''}
+</div>
+</div>
+<div class="stack" style="margin-top:16px">
+${list.length?list.map(n=>`
+<div class="card" style="padding:14px 16px;display:flex;gap:12px;align-items:flex-start;${n.read?'opacity:.62':'border-color:var(--acc-line)'}">
+<div style="width:32px;height:32px;border-radius:10px;flex:none;display:grid;place-items:center;background:${n.read?'var(--bg2)':'var(--acc-soft)'};color:${n.read?'var(--mute)':'var(--acc)'}">${icon('inbox')}</div>
+<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:${n.read?'600':'750'};line-height:1.45">${esc(n.text)}</div><div style="font-size:11px;color:var(--mute);font-weight:600;margin-top:3px">${esc(n.ts)}</div></div>
+${n.read?'':'<span style="width:8px;height:8px;border-radius:50%;background:var(--acc);flex:none;margin-top:6px"></span>'}
+</div>`).join(''):emptyState('inbox','No notifications','Assignments, approvals and comments will appear here.')}
+</div>
+`;
+}
+
+async function markAll() {
+const token = localStorage.getItem('access_token');
+
+
+try {
+    const res = await fetch('http://127.0.0.1:8000/api/v1/notifications/read-all', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!res.ok) {
+        throw new Error("Failed to mark all as read");
+    }
+
+    toast('All marked as read');
+    await fetchRealData();
+
+} catch (err) {
+    alert("Error: " + err.message);
+}
+
+
+}
+
+
+/* ============ TASK DETAIL ============ */
+function showT(id){
+const t=T(id);
+if(!t)return;
+const m=canManage(), mine=t.emp===S.me, dm=dueMeta(t);
+let actions='';
+if(mine&&!['Completed','Submitted for Review'].includes(t.status)){
+actions+=`<select id="ns" style="width:auto;min-width:150px;flex:0 1 auto">${['Not Started','In Progress','On Hold','Delayed'].map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select><button class="btn sm" onclick="setS('${id}')">Update status</button><button class="btn ok sm" onclick="submitT('${id}')">${icon('check')} Submit for review</button>`;
+}
+if(m&&t.status==='Submitted for Review')actions+=`<button class="btn ok sm" onclick="approveFlow('${id}')">${icon('check')} Approve</button><button class="btn bad sm" onclick="rejectFlow('${id}')">Request changes</button>`;
+if(m)actions+=`<button class="btn ghost sm" onclick="deadlineFlow('${id}')">${icon('clock')} Change deadline</button><button class="btn ghost sm" onclick="delT('${id}')">Delete</button>`;
+
+const body=`
+<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:14px">
+<span class="tag ${stClass(t.status)}">${t.status}</span>
+<span class="tag ${t.prio}">${t.prio} priority</span>
+<span class="tag ${dm.cls==='over'?'bad':dm.cls==='today'?'warn':'mute'}">${dm.txt}</span>
+</div>
+${t.desc?`<p style="font-size:13.5px;color:var(--ink2);line-height:1.6;margin:0 0 4px">${esc(t.desc)}</p>`:''}
+<div class="kv">
+<div><span>Assigned to</span><b>${avatar(U(t.emp).name,22)} ${esc(U(t.emp).name)}</b></div>
+<div><span>Assigned by</span><b>${esc(U(t.by).name)}</b></div>
+<div><span>Project</span><b>${t.proj?esc(P(t.proj)?.name||'---'):'Independent'}</b></div>
+<div><span>Timeline</span><b>${fmtD(t.start)} → ${fmtD(t.due)}</b></div>
+<div><span>Estimated effort</span><b>${t.hours}h</b></div>
+${t.status==='Completed'?`<div><span>Completed on</span><b>${fmtD(t.done)}</b></div>`:''}
+</div>
+${actions?`<div class="row" style="margin-bottom:6px">${actions}</div>`:''}
+<div style="margin-top:20px">
+<h4 style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin:0 0 8px">Comments</h4>
+${t.com.length?t.com.map(c=>`<div class="cmt"><div class="cbody"><b>${esc(c.by)}</b><p>${esc(c.t)}</p></div></div>`).join(''):`<p style="font-size:12.5px;color:var(--mute);margin:0 0 8px">No comments yet.</p>`}
+<div class="row" style="margin-top:10px;gap:8px">
+<input id="cm" placeholder="Add a comment..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();cmt('${id}')}">
+<button class="btn sm" onclick="cmt('${id}')">Post</button>
+</div>
+</div>
+<div style="margin-top:20px">
+<h4 style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin:0 0 6px">History</h4>
+<ul class="hist">
+${t.hist.slice().reverse().map(h=>`<li><b style="color:var(--ink2)">${fmtD(h.at)}</b> · ${esc(h.t)}</li>`).join('')}
+</ul>
+</div>
+`;
+
+openModal({
+title:esc(t.title),
+sub:t.proj?esc(P(t.proj)?.name||''):'Independent task',
+body,
+actions:[{label:'Close',kind:'ghost'}]
+});
+}
+
+/* ============ TASK MUTATIONS ============ */
+async function setS(id) {
+    const v = $('#ns').value;
+    const token = localStorage.getItem('access_token');
+
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/status`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: v })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Failed to update status");
+        }
+
+        closeM();
+        toast('Status updated to ' + v);
+        await fetchRealData();
+
+    } catch (err) {
+        alert("Error updating status: " + err.message);
+    }
+}
+
+async function submitT(id) {
+    const token = localStorage.getItem('access_token');
+
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/submit`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Failed to submit task");
+        }
+
+        closeM();
+        toast('Submitted for review!');
+        await fetchRealData(); // Reload from DB
+
+    } catch (err) {
+        alert("Error submitting task: " + err.message);
+    }
+}
+
+async function quickStatus(id, val) {
+    const t = T(id);
+    if (t.status === val) return;
+
+    const token = localStorage.getItem('access_token');
+
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/status`,  {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: val })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Failed to update status");
+        }
+
+        toast('Status updated to ' + val);
+        await fetchRealData(); // Reload from DB
+
+    } catch (err) {
+        alert("Error updating status: " + err.message);
+        await fetchRealData(); // Revert if failed
+    }
+}
+
+
+
+
+function approveFlow(id) {
+    const t = T(id);
+    if (!t) return;
+
+    openModal({
+        title: 'Approve task',
+        sub: esc(t.title),
+        body: `
+            <p style="font-size:13px;color:var(--ink2);margin:0 0 12px;line-height:1.55">
+                Rate the quality of this work. The score feeds into
+                <b>${esc(U(t.emp).name.split(' ')[0])}</b>'s performance.
+            </p>
+
+            <label>Manager evaluation</label>
+            <input id="rating_slider" type="range" min="0" max="100" value="85"
+                oninput="document.getElementById('rtv').textContent=this.value">
+
+            <div class="rangeout" id="rtv">85</div>
+
+            <div class="row" style="justify-content:space-between;font-size:11px;color:var(--mute);font-weight:700;margin-top:2px">
+                <span>Needs work</span>
+                <span>Outstanding</span>
+            </div>
+        `,
+        actions: [
+            { label: 'Cancel', kind: 'ghost' },
+            {
+                label: 'Approve & complete',
+                kind: 'ok',
+                onClick: async () => {
+
+                    // Safety check to find the slider
+                    const slider = document.getElementById('rating_slider');
+
+                    if (!slider) {
+                        alert("Error: Rating slider not found on the screen!");
+                        return false;
+                    }
+
+                    const rating = slider.value;
+                    const token = localStorage.getItem('access_token');
+
+                    try {
+                        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/approve`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                rating: parseInt(rating)
+                            })
+                        });
+
+                        if (!res.ok) {
+                            const errorData = await res.json();
+                            throw new Error(errorData.detail || "Failed to approve");
+                        }
+
+                        toast('Task Approved!');
+                        await fetchRealData();
+
+                    } catch (err) {
+                        alert("Error approving task: " + err.message);
+                        return false;
+                    }
+                }
+            }
+        ]
+    });
+}
+
+
+
+
+
+
+
+
+function rejectFlow(id) {
+    const t = T(id);
+    if (!t) return;
+
+    openModal({
+        title: 'Request changes',
+        sub: esc(t.title),
+        body: `
+            <label>Reason for rejection</label>
+            <textarea id="rr" rows="3" placeholder="Explain clearly what needs to change..."></textarea>
+        `,
+        actions: [
+            { label: 'Cancel', kind: 'ghost' },
+            {
+                label: 'Send back',
+                kind: 'bad',
+                onClick: async () => {
+                    const reason = document.getElementById('rr').value.trim();
+
+                    if (!reason) {
+                        toast('Add a reason first', 'bad');
+                        return false;
+                    }
+
+                    const token = localStorage.getItem('access_token');
+
+                    try {
+                        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/request-changes`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ reason: reason })
+                        });
+
+                        if (!res.ok) {
+                            throw new Error("Failed to request changes");
+                        }
+
+                        toast('Sent back to employee', 'warn');
+                        await fetchRealData();
+
+                    } catch (err) {
+                        alert("Error: " + err.message);
+                        return false;
+                    }
+                }
+            }
+        ]
+    });
+}
+
+
+
+
+function deadlineFlow(id) {
+    const t = T(id);
+    if (!t) return;
+
+    openModal({
+        title: 'Change deadline',
+        sub: esc(t.title),
+        body: `
+            <label>New due date</label>
+            <input id="dd" type="date" value="${t.due}" min="${t.start}">
+        `,
+        actions: [
+            { label: 'Cancel', kind: 'ghost' },
+            {
+                label: 'Save deadline',
+                kind: 'primary',
+                onClick: async () => {
+                    const d = document.getElementById('dd').value;
+
+                    if (!d) {
+                        toast('Pick a date', 'bad');
+                        return false;
+                    }
+
+                    if (d < t.start) {
+                        toast('Due date must be on or after the start date', 'bad');
+                        return false;
+                    }
+
+                    const token = localStorage.getItem('access_token');
+
+                    try {
+                        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/deadline`, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ due_date: d })
+                        });
+
+                        if (!res.ok) {
+                            throw new Error("Failed to update deadline");
+                        }
+
+                        toast('Deadline updated');
+                        await fetchRealData();
+
+                    } catch (err) {
+                        alert("Error updating deadline: " + err.message);
+                        return false;
+                    }
+                }
+            }
+        ]
+    });
+}
+
+
+
+async function delT(id) {
+    const t = T(id);
+
+    const ok = await confirmAsk(
+        'Delete task',
+        `"${esc(t.title)}" will be permanently removed. This cannot be undone.`,
+        'Delete',
+        'bad'
+    );
+
+    if (ok) {
+        const token = localStorage.getItem('access_token');
+
+        try {
+            const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!res.ok) {
+                throw new Error("Failed to delete task");
+            }
+
+            toast('Task deleted', 'warn');
+            await fetchRealData();
+
+        } catch (err) {
+            alert("Error deleting task: " + err.message);
+        }
+    }
+}
+
+
+
+async function cmt(id) {
+    const v = document.getElementById('cm').value.trim();
+    if (!v) return;
+
+    const token = localStorage.getItem('access_token');
+
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/comments`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ body: v })
+        });
+
+        if (!res.ok) throw new Error("Failed to post comment");
+
+        toast('Comment posted');
+        await fetchRealData();
+        showT(id);
+
+    } catch (err) {
+        alert("Error posting comment: " + err.message);
+    }
+}
+
+
+/* ============ CREATE TASK ============ */
+function taskForm(emp,d){
+const startD=d||today;
+openModal({
+title:'Assign task',
+sub:'Create a task and route it to your team.',
+body:`
+<label>Title</label>
+<input id="f1" placeholder="e.g. Finalise onboarding flow">
+<label>Description <span style="font-weight:500;text-transform:none">(optional)</span></label>
+<textarea id="f2" rows="2" placeholder="Any context the assignee needs..."></textarea>
+<label>Assign to</label>
+<select id="f3" multiple size="4">
+${S.users.filter(u=>u.active&&u.role!=='admin').map(u=>`<option value="${u.id}" ${u.id===emp?'selected':''}>${esc(u.name)}</option>`).join('')}
+</select>
+<p style="font-size:11px;color:var(--mute);margin:4px 0 0">Hold Ctrl / ⌘ to select several people.</p>
+<label>Project</label>
+<select id="f4"><option value="">Independent task</option>${S.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+<div class="row grow" style="gap:10px">
+<div style="flex:1"><label>Start</label><input id="f5" type="date" value="${startD}"></div>
+<div style="flex:1"><label>Due</label><input id="f6" type="date" value="${startD}"></div>
+<div style="flex:0 0 90px"><label>Hours</label><input id="f7" type="number" min="0" value="4"></div>
+</div>
+<label>Priority</label>
+<select id="f8">${PR.map(p=>`<option ${p==='Medium'?'selected':''}>${p}</option>`).join('')}</select>
+`,
+actions:[
+{label:'Cancel',kind:'ghost'},
+{label:'Assign task',kind:'primary',onClick:addT}
+]
+});
+}
+
+async function addT(){
+  const ti = $('#f1').value.trim();
+  const es = [...$('#f3').selectedOptions].map(o => parseInt(o.value)); // IDs must be numbers
+  const s = $('#f5').value, d = $('#f6').value;
+  
+  if(!ti){toast('Enter a task title','bad');return false}
+  if(!es.length){toast('Select at least one employee','bad');return false}
+  if(!s || !d || d < s){toast('Due date must be on or after the start date','bad');return false}
+
+  const desc = $('#f2').value;
+  const proj = $('#f4').value ? parseInt($('#f4').value) : null;
+  const prio = $('#f8').value;
+  const h = parseInt($('#f7').value) || 0;
+
+  const token = localStorage.getItem('access_token');
+
+  try {
+    // Send the data to FastAPI!
+    const res = await fetch('http://127.0.0.1:8000/api/v1/tasks', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: ti,
+        description: desc,
+        assignee_ids: es,
+        project_id: proj,
+        start_date: s,
+        due_date: d,
+        estimated_hours: h,
+        priority: prio
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to create task");
+    }
+
+    // Success! Close modal, reload data from DB, and refresh UI
+    closeM();
+    toast('Task created successfully!');
+    await fetchRealData(); // This reloads the page with the new task
+
+  } catch (err) {
+    alert("Error creating task: " + err.message);
+  }
+}
+
+/* ============ CREATE PROJECT ============ */
+function projForm(){
+openModal({
+title:'New project',
+body:`
+<label>Name</label>
+<input id="f1" placeholder="e.g. Mobile app v2">
+<label>Description</label>
+<textarea id="f2" rows="2" placeholder="What is this project about?"></textarea>
+<label>Project manager</label>
+<select id="f3">
+${S.users.filter(u=>u.active&&u.role!=='employee').map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}
+</select>
+<label>Team members</label>
+<select id="f4" multiple size="4">
+${S.users.filter(u=>u.active&&u.role==='employee').map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}
+</select>
+<div class="row grow">
+<div style="flex:1"><label>Start</label><input id="f5" type="date" value="${today}"></div>
+<div style="flex:1"><label>End</label><input id="f6" type="date" value="${addD(today,30)}"></div>
+</div>
+<label>Priority</label>
+<select id="f7">${PR.map(p=>`<option ${p==='Medium'?'selected':''}>${p}</option>`).join('')}</select>
+`,
+actions:[
+{label:'Cancel',kind:'ghost'},
+{label:'Create project',kind:'primary',onClick:addP}
+]
+});
+}
+
+
+async function addP() {
+const n = $('#f1').value.trim();
+const s = $('#f5').value;
+const e = $('#f6').value;
+
+
+if (!n) {
+    toast('Enter a project name', 'bad');
+    return false;
+}
+
+if (e < s) {
+    toast('End date must be after the start date', 'bad');
+    return false;
+}
+
+const desc = $('#f2').value;
+const mgr = parseInt($('#f3').value);
+const members = [...$('#f4').selectedOptions].map(o => parseInt(o.value));
+const prio = $('#f7').value;
+
+const token = localStorage.getItem('access_token');
+
+try {
+    const res = await fetch('http://127.0.0.1:8000/api/v1/projects', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            name: n,
+            description: desc,
+            manager_id: mgr,
+            member_ids: members,
+            start_date: s,
+            end_date: e,
+            priority: prio
+        })
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Failed to create project");
+    }
+
+    toast('Project created successfully!');
+    await fetchRealData();
+
+} catch (err) {
+    alert("Error creating project: " + err.message);
+}
+
+
+}
+
+
+/* ============ BOOT ============ */
+load();
+render();
+</script>
+</body>
+</html>
