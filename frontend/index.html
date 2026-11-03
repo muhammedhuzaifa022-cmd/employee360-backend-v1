@@ -316,7 +316,7 @@ async function fetchRealData() {
 
     try {
         // 1. Fetch Current User
-        const meRes = await fetch('http://127.0.0.1:8000/api/v1/auth/me', { headers });
+        const meRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/auth/me', { headers });
         if (!meRes.ok) throw new Error("Session expired");
         const meData = await meRes.json();
         
@@ -324,7 +324,7 @@ async function fetchRealData() {
         S.me = meData.id.toString(); // Keep ID as string for frontend matching
 
         // 2. Fetch Users
-        const usersRes = await fetch('http://127.0.0.1:8000/api/v1/users?page_size=100', { headers });
+        const usersRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', { headers });
         const usersData = await usersRes.json();
         S.users = usersData.items.map(u => ({
             id: u.id.toString(),
@@ -338,7 +338,7 @@ async function fetchRealData() {
         }));
 
         // 3. Fetch Projects
-        const projRes = await fetch('http://127.0.0.1:8000/api/v1/projects', { headers });
+        const projRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/projects', { headers });
         const projData = await projRes.json();
         S.projects = projData.items.map(p => ({
             id: p.id.toString(),
@@ -352,7 +352,7 @@ async function fetchRealData() {
         }));
 
         // 4. Fetch Tasks
-        const tasksRes = await fetch('http://127.0.0.1:8000/api/v1/tasks?page_size=100', { headers });
+        const tasksRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/tasks?page_size=100', { headers });
         const tasksData = await tasksRes.json();
         S.tasks = tasksData.items.map(t => ({
             id: t.id.toString(),
@@ -372,7 +372,7 @@ async function fetchRealData() {
             rating: t.rating
         }));
         // 5. Fetch Notifications
-        const notesRes = await fetch('http://127.0.0.1:8000/api/v1/notifications?page_size=100', { headers });
+        const notesRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/notifications?page_size=100', { headers });
         const notesData = await notesRes.json();
         S.notes = notesData.items.map(n => ({
         id: n.id.toString(),
@@ -633,7 +633,6 @@ const pendingLeaves=S.leaves.filter(l=>l.status==='Pending'&&l.emp!==S.me).lengt
 const nav=[
 {id:'home',label:'Home',ico:'home'},
 {id:'tasks',label:m?'Tasks':'My tasks',ico:'tasks'},
-{id:'leaves',label:'Leave',ico:'leave',badge:m?pendingLeaves:0},
 {id:'calendar',label:'Calendar',ico:'cal'},
 {id:'projects',label:'Projects',ico:'proj'},
 ...(m?[{id:'team',label:'Team',ico:'team'}]:[]),
@@ -712,7 +711,7 @@ async function handleRealLogin(event) {
         formData.append('username', email);
         formData.append('password', password);
 
-        const res = await fetch('http://127.0.0.1:8000/api/v1/auth/token', {
+        const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/auth/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: formData
@@ -1229,17 +1228,51 @@ ${sel.length?sel.map(t=>`
 `;
 }
 
-function dropD(e,d){
+async function dropD(e, d) {
 e.preventDefault();
-if(!canManage())return;
-const t=T(e.dataTransfer.getData('text/plain'));
-if(!t||t.start===d)return;
-const len=diff(t.start,t.due);
-t.start=d;t.due=addD(d,len);
-log(t,'Rescheduled to '+fmtD(d));
-note(t.emp,'Task rescheduled: '+t.title);
-selD=d;save();render();toast('Rescheduled to '+fmtD(d));
+
+
+if (!canManage()) return;
+
+const taskId = e.dataTransfer.getData('text/plain');
+const t = T(taskId);
+
+if (!t || t.start === d) return;
+
+// Calculate the new dates
+const len = diff(t.start, t.due);
+const newDue = addD(d, len);
+
+const token = localStorage.getItem('access_token');
+
+try {
+    const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${taskId}/reschedule`, {
+        method: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            start_date: d,
+            due_date: newDue
+        })
+    });
+
+    if (!res.ok) {
+        throw new Error("Failed to reschedule");
+    }
+
+    selD = d;
+    toast('Rescheduled to ' + fmtD(d));
+
+    await fetchRealData();
+
+} catch (err) {
+    alert("Error rescheduling: " + err.message);
 }
+
+}
+
 
 /* ============ PROJECTS ============ */
 function projectsView(){
@@ -1360,7 +1393,7 @@ body: ` <label>Full name</label> <input id="f1" placeholder="e.g. Maya Patel">
                         payload.password = pw;
                     }
 
-                    const res = await fetch('http://127.0.0.1:8000/api/v1/users', {
+                    const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/users', {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${token}`,
@@ -1485,7 +1518,7 @@ const token = localStorage.getItem('access_token');
 
 
 try {
-    const res = await fetch('http://127.0.0.1:8000/api/v1/notifications/read-all', {
+    const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/notifications/read-all', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`
@@ -1565,7 +1598,7 @@ async function setS(id) {
     const token = localStorage.getItem('access_token');
 
     try {
-        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/status`, {
+        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/status`, {
             method: 'PATCH',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -1592,7 +1625,7 @@ async function submitT(id) {
     const token = localStorage.getItem('access_token');
 
     try {
-        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/submit`, {
+        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/submit`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -1621,7 +1654,7 @@ async function quickStatus(id, val) {
     const token = localStorage.getItem('access_token');
 
     try {
-        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/status`,  {
+        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/status`,  {
             method: 'PATCH',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -1690,7 +1723,7 @@ function approveFlow(id) {
                     const token = localStorage.getItem('access_token');
 
                     try {
-                        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/approve`, {
+                        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/approve`, {
                             method: 'POST',
                             headers: {
                                 'Authorization': `Bearer ${token}`,
@@ -1753,7 +1786,7 @@ function rejectFlow(id) {
                     const token = localStorage.getItem('access_token');
 
                     try {
-                        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/request-changes`, {
+                        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/request-changes`, {
                             method: 'POST',
                             headers: {
                                 'Authorization': `Bearer ${token}`,
@@ -1814,7 +1847,7 @@ function deadlineFlow(id) {
                     const token = localStorage.getItem('access_token');
 
                     try {
-                        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/deadline`, {
+                        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/deadline`, {
                             method: 'PUT',
                             headers: {
                                 'Authorization': `Bearer ${token}`,
@@ -1856,7 +1889,7 @@ async function delT(id) {
         const token = localStorage.getItem('access_token');
 
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}`, {
+            const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -1885,7 +1918,7 @@ async function cmt(id) {
     const token = localStorage.getItem('access_token');
 
     try {
-        const res = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${id}/comments`, {
+        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/comments`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -1957,7 +1990,7 @@ async function addT(){
 
   try {
     // Send the data to FastAPI!
-    const res = await fetch('http://127.0.0.1:8000/api/v1/tasks', {
+    const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/tasks', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -2046,7 +2079,7 @@ const prio = $('#f7').value;
 const token = localStorage.getItem('access_token');
 
 try {
-    const res = await fetch('http://127.0.0.1:8000/api/v1/projects', {
+    const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/projects', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
