@@ -10,7 +10,8 @@ from app.models.notification import Notification
 from app.models.project import Project, project_members
 from app.models.task import Task, TaskComment, TaskHistory
 from app.models.user import User
-
+from app.models.report import DailyReport
+from app.models.attendance import Attendance 
 __all__ = [
     "Base", "Department", "User", "Project", "project_members", "Task",
     "TaskComment", "TaskHistory", "LeaveRequest", "Notification",
