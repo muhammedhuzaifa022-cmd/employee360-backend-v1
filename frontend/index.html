@@ -2031,7 +2031,59 @@
     <div id="toasts" class="toasts"></div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-function renderCharts() {
+
+function downloadReportsCSV() {
+    // Fetch reports using the authentication token
+    const token = localStorage.getItem('access_token');
+
+    fetch('http://127.0.0.1:8000/api/v1/reports/my-reports', {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+
+        if (!data || data.length === 0) {
+            return alert("No reports to download.");
+        }
+
+        // 1. Create CSV Header
+        let csvContent = "Date,Employee ID,Report Content\n";
+
+        // 2. Add Rows
+        data.forEach(r => {
+
+            // Escape double quotes and commas in report content
+            const cleanContent = `"${(r.content || '').replace(/"/g, '""')}"`;
+
+            csvContent += `${r.report_date},${r.employee_id},${cleanContent}\n`;
+        });
+
+        // 3. Trigger Download
+        const blob = new Blob([csvContent], {
+            type: 'text/csv;charset=utf-8;'
+        });
+
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "daily_reports.csv");
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        URL.revokeObjectURL(url);
+    })
+    .catch(err => {
+        console.error("CSV Download Error:", err);
+        alert("Error downloading CSV");
+    });
+}
+
+async function renderCharts() {
     // 1. Task Chart
     const taskCtx = document.getElementById('taskChart');
     if (taskCtx) {
@@ -2056,26 +2108,56 @@ function renderCharts() {
         });
     }
 
-    // 2. Attendance Chart
     const attCtx = document.getElementById('attendanceChart');
-    if (attCtx) {
-        if (window.myAttChart) window.myAttChart.destroy();
-        
-        window.myAttChart = new Chart(attCtx, {
-            type: 'bar',
-            data: {
-                labels: ['Present', 'Absent', 'Late', 'Half-Day'],
-                datasets: [{
-                    label: 'Days',
-                    data: [18, 1, 2, 1], // Dummy data for now
-                    backgroundColor: ['#0d9b74', '#dc4b4b', '#c07a12', '#2f6fd0'],
-                    borderRadius: 6
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+
+if (attCtx) {
+    if (window.myAttChart) window.myAttChart.destroy();
+
+    let present = 0, absent = 0, late = 0, half = 0;
+    const token = localStorage.getItem('access_token');
+
+    try {
+        const res = await fetch('http://127.0.0.1:8000/api/v1/attendance/summary', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         });
+
+        if (res.ok) {
+            const data = await res.json();
+            present = data.present_count || 0;
+            absent = data.absent_count || 0;
+            late = data.late_arrivals || 0;
+            half = data.half_day_count || 0;
+        }
+    } catch (e) {
+        console.error("Could not load chart data", e);
     }
+
+    window.myAttChart = new Chart(attCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Present', 'Absent', 'Late', 'Half-Day'],
+            datasets: [{
+                label: 'Days',
+                data: [present, absent, late, half],
+                backgroundColor: ['#0d9b74', '#dc4b4b', '#c07a12', '#2f6fd0'],
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
 }
+}
+    
 async function fetchRealData() {
     const token = localStorage.getItem('access_token');
     if (!token) return;
@@ -2764,6 +2846,10 @@ function reportsView(){
       <p style="color:var(--mute)">Loading reports...</p>
     </div>
   </div>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h3>My Recent Reports</h3>
+    <button class="btn ghost sm" onclick="downloadReportsCSV()">⬇️ Export to Excel</button>
+</div>
   `;
 }
 
