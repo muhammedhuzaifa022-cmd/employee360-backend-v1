@@ -2036,7 +2036,7 @@ function downloadReportsCSV() {
     // Fetch reports using the authentication token
     const token = localStorage.getItem('access_token');
 
-    fetch('http://127.0.0.1:8000/api/v1/reports/my-reports', {
+    fetch('https://employee360-backend-v1.onrender.com/api/v1/reports/my-reports', {
         headers: {
             'Authorization': `Bearer ${token}`
         }
@@ -2117,7 +2117,7 @@ if (attCtx) {
     const token = localStorage.getItem('access_token');
 
     try {
-        const res = await fetch('http://127.0.0.1:8000/api/v1/attendance/summary', {
+        const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/attendance/summary', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
