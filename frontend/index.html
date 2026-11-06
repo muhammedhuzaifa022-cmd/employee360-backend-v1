@@ -2247,25 +2247,39 @@ async function fetchRealData() {
         }));
 
         // 6. Fetch Leaves
-        const leavesRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/leave/my-leaves', { headers });
-        if (!leavesRes.ok) throw new Error("Failed to fetch leave requests");
+        // 6. Fetch Leaves
+let allLeaves = [];
 
-        const leavesData = await leavesRes.json();
+// First, get my own leaves
+const myLeavesRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/leave/my-leaves', { headers });
+if (myLeavesRes.ok) {
+    allLeaves = await myLeavesRes.json();
+}
 
-        S.leaves = leavesData.map(l => ({
-            id: l.id.toString(),
-            emp: l.employee_id.toString(),
-            type: l.leave_type,
-            from: l.start_date,
-            to: l.end_date,
-            days: l.days,
-            reason: l.reason,
-            status: l.status,
-            decidedBy: l.decided_by_id ? l.decided_by_id.toString() : null,
-            decidedAt: l.decided_at,
-            comment: l.comment,
-            createdAt: l.created_at
-        }));
+// If I am an Admin or Team Lead, ALSO get the team's pending queue
+if (meData.role === 'admin' || meData.role === 'teamlead') {
+    const queueRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/leave/queue', { headers });
+    if (queueRes.ok) {
+        const queueData = await queueRes.json();
+        // Add team leaves to the list
+        allLeaves = allLeaves.concat(queueData);
+    }
+}
+
+S.leaves = allLeaves.map(l => ({
+    id: l.id.toString(),
+    emp: l.employee_id.toString(),
+    type: l.leave_type,
+    from: l.start_date,
+    to: l.end_date,
+    days: l.days,
+    reason: l.reason,
+    status: l.status,
+    decidedBy: l.decided_by_id ? l.decided_by_id.toString() : null,
+    decidedAt: l.decided_at,
+    comment: l.comment,
+    createdAt: l.created_at
+}));
 
         // Save and Render
         save();
