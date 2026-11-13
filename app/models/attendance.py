@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, Time, UniqueConstraint, Index
+from sqlalchemy import Column, Date, ForeignKey, Integer, String, Time, UniqueConstraint, Index, func, DateTime
 from app.db.base import Base
 
 class Attendance(Base):
@@ -29,5 +29,7 @@ class Attendance(Base):
     check_in = Column(Time, nullable=True)
 
     check_out = Column(Time, nullable=True)
+
+    marked_at = Column(DateTime(timezone=True), server_default=func.now())
 
     remarks = Column(String(500), nullable=True)

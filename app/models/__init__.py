@@ -3,6 +3,7 @@ Imports every model so SQLAlchemy and Alembic know about all tables.
 Always import models from here:  from app.models import User, Task
 """
 from app.db.base import Base
+from app.models.holiday import Holiday
 from app.models.auth import DevicePushToken, RefreshToken
 from app.models.department import Department
 from app.models.leave import LeaveRequest

@@ -1,9 +1,9 @@
 """Table: users (Admin, Team Lead, Employee)."""
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, ForeignKey,
-                        Index, String, func, true)
+                        Index, String, Time, func, true)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -34,6 +34,7 @@ class User(TimestampMixin, Base):
 
     department_id: Mapped[int | None] = mapped_column(
         ForeignKey("departments.id", ondelete="RESTRICT"), nullable=True, index=True)
+    custom_shift_start: Mapped[time | None] = mapped_column(Time, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                             server_default=true())

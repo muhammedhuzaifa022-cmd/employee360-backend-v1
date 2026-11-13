@@ -10,6 +10,9 @@ AttendanceStatus = Literal[
     "Half-Day",
     "Late",
     "Holiday",
+    "WFH",
+    "Sick Leave",
+    "Casual Leave",
 ]
 
 

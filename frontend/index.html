@@ -2020,6 +2020,50 @@
                 padding: 5px
             }
         }
+    /* --- ATTENDANCE UI STYLES --- */
+.att-root{font-family:inherit;color:#1e293b; display:flex; flex-direction:column; gap:16px;}
+.att-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.att-bar input{padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+.att-btn{padding:7px 12px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;font-weight:600;transition:0.2s;}
+.att-btn:hover{background:#e2e8f0}
+.att-primary{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.att-primary:hover{background:#4338ca}
+.att-green{background:#ecfdf5;border-color:#a7f3d0;color:#047857}
+.att-green:hover{background:#10b981;color:#fff}
+.att-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.att-chip{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 14px;min-width:90px; box-shadow:0 1px 2px rgba(0,0,0,0.05);}
+.att-chip b{display:block;font-size:20px}
+.att-chip span{font-size:11px;text-transform:uppercase;color:#64748b; font-weight:700;}
+.att-tabs{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.att-tab.on{background:#4f46e5;color:#fff;border-color:#4f46e5}
+.att-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);}
+.att-shiftbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-weight:700;gap:8px;flex-wrap:wrap}
+.att-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-bottom:1px solid #f1f5f9;cursor:pointer;flex-wrap:wrap}
+.att-row:hover{background:#f8fafc}
+.att-sub{font-size:12px;color:#94a3b8}
+.att-badge{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid}
+.att-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:1000;align-items:center;justify-content:center;padding:16px}
+.att-overlay.open{display:flex}
+.att-modal{background:#fff;border-radius:14px;width:100%;max-width:340px;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.att-modal h3{margin:0;font-size:15px}
+.att-modal label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:#475569;margin:10px 0 4px}
+.att-modal input,.att-modal select{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+.att-modal input[type=radio]{width:auto}
+.att-big{text-align:center;font-size:24px!important;font-weight:700;letter-spacing:4px}
+.att-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+#att-toast{position:fixed;bottom:20px;right:20px;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:1100}
+
+/* --- GEMINI BASE STYLES --- */
+body { font-family: 'Inter', sans-serif; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+@keyframes highlight {
+    0% { background-color: #e0e7ff; }
+    100% { background-color: transparent; }
+}
+.row-highlight { animation: highlight 1.5s ease-out; }
     </style>
 </head>
 
@@ -2576,6 +2620,12 @@ if(view === 'attendance'){
 if(view === 'home'){
     setTimeout(renderCharts, 100);
 }
+if (view === 'attendance') {
+    setTimeout(() => {
+        document.getElementById('att-date-picker').value = today;
+        renderAttDaily();
+    }, 100);
+}
         }
 
         function go(v) {view = v; render(); window.scrollTo({top: 0, behavior: 'smooth'})}
@@ -2927,59 +2977,83 @@ async function loadReports(){
         
 
 function attendanceView(){
-  const role = me().role;
-  const isHR = role === 'hr' || role === 'admin'; 
-  const isManager = role === 'admin' || role === 'teamlead';
-  
   return `
-  <div class="grid ${isHR ? 'g2' : 'g1'}">
-    
-    ${isHR ? `
-    <div class="card">
-      <h3 class="tight">Mark Attendance (HR/Admin Only)</h3>
-      <p class="hint">Weekends (Sat/Sun) are automatically marked as Holiday.</p>
-      <label>Date</label>
-      <input type="date" id="att_date" value="${today}">
-      
-      <label>Employee</label>
-      <select id="att_emp">
-          ${S.users.filter(u=>u.active).map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}
-      </select>
-      
-      <label>Status</label>
-      <select id="att_status">
-        <option value="Present">Present</option>
-        <option value="Absent">Absent</option>
-        <option value="Half-Day">Half-Day</option>
-        <option value="Late">Late Arrival</option>
-      </select>
-      <div class="row">
-        <div style="flex:1"><label>Check-in</label><input type="time" id="att_in"></div>
-        <div style="flex:1"><label>Check-out</label><input type="time" id="att_out"></div>
-      </div>
-      <button class="btn" style="margin-top:16px; width:100%" onclick="markAttendance()">Submit Attendance</button>
+  <div class="att-root">
+    <div class="att-tabs">
+      <button class="att-btn att-tab on" onclick="switchAttTab('daily')" id="att-tab-daily">Daily Marking</button>
+      <button class="att-btn att-tab" onclick="switchAttTab('monthly')" id="att-tab-monthly">Monthly Report</button>
+      <button class="att-btn att-tab" onclick="switchAttTab('yearly')" id="att-tab-yearly">Yearly Report</button>
     </div>
-    ` : ''}
 
-    <div class="card">
-      <h3>Attendance Overview (${isManager ? 'Team' : 'My'})</h3>
-      <p class="hint">Monthly summary of present, absent, and late arrivals.</p>
-      
-      <div class="grid g4" style="margin-top:14px">
-        <div class="stat ok"><div class="k">Present</div><div class="v" id="sum_present">-</div></div>
-        <div class="stat bad"><div class="k">Absent</div><div class="v" id="sum_absent">-</div></div>
-        <div class="stat warn"><div class="k">Half-Day</div><div class="v" id="sum_half">-</div></div>
-        <div class="stat blue"><div class="k">Late</div><div class="v" id="sum_late">-</div></div>
+    <div id="att-view-daily">
+      <div class="att-bar">
+        <button class="att-btn" onclick="navigateAttDate(-1)">◀️ Prev</button>
+        <input type="date" id="att-date-picker" onchange="renderAttDaily()">
+        <button class="att-btn" onclick="navigateAttDate(1)">Next ▶️</button>
+        <input type="text" id="att-search" placeholder="Search employee..." oninput="renderAttDaily()" style="flex:1;">
+        <button class="att-btn att-green" onclick="markAllPresent()">Mark All Present</button>
+        <button class="att-btn" onclick="openHolidayModal()" style="background:#fef3c7; border-color:#fcd34d; color:#92400e;">Manage Holidays</button>
+      </div>
+
+      <div class="att-chips">
+        <div class="att-chip"><b id="chip-present" style="color:#047857">0</b><span>Present</span></div>
+        <div class="att-chip"><b id="chip-late" style="color:#b45309">0</b><span>Late</span></div>
+        <div class="att-chip"><b id="chip-half" style="color:#be123c">0</b><span>Half-Day</span></div>
+        <div class="att-chip"><b id="chip-leave" style="color:#854d0e">0</b><span>Leave</span></div>
+        <div class="att-chip"><b id="chip-unmarked" style="color:#64748b">0</b><span>Unmarked</span></div>
+      </div>
+
+      <div id="att-shift-container" style="display:flex; flex-direction:column; gap:16px;"></div>
+    </div>
+
+    <div id="att-view-monthly" style="display:none;" class="att-card">
+       <div style="padding:20px; text-align:center; color:#64748b;">Monthly Reports coming soon.</div>
+    </div>
+    <div id="att-view-yearly" style="display:none;" class="att-card">
+       <div style="padding:20px; text-align:center; color:#64748b;">Yearly Reports coming soon.</div>
+    </div>
+  </div>
+
+  <div id="att-mark-modal" class="att-overlay">
+    <div class="att-modal">
+      <h3 id="att-modal-name">Employee Name</h3>
+      <p class="att-sub" id="att-modal-shift">Shift: 09:00 AM</p>
+      <label>Check-in Time (Type 0912)</label>
+      <input type="time" id="att-checkin" class="att-big" oninput="previewAttStatus()" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveAttRecord();}">
+      <label>Status Preview</label>
+      <div id="att-status-preview" style="padding:10px; text-align:center; font-weight:bold; background:#f1f5f9; border-radius:8px;">Unmarked</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px;">
+        <button class="att-btn" onclick="quickMark('Present')" style="color:#047857; border-color:#a7f3d0;">Present</button>
+        <button class="att-btn" onclick="quickMark('Late')" style="color:#b45309; border-color:#fcd34d;">Late</button>
+        <button class="att-btn" onclick="quickMark('Half-Day')" style="color:#be123c; border-color:#fda4af;">Half-Day</button>
+        <button class="att-btn" onclick="quickMark('Sick Leave')" style="color:#854d0e; border-color:#fde047;">Sick Leave</button>
+        <button class="att-btn" onclick="quickMark('Casual Leave')" style="color:#854d0e; border-color:#fde047;">Casual Leave</button>
+        <button class="att-btn" onclick="quickMark('Absent')">Absent</button>
+      </div>
+      <div class="att-actions" style="justify-content:space-between; margin-top:18px;">
+        <button class="att-btn" onclick="clearAttStatus()" style="color:#be123c;">Clear</button>
+        <div>
+          <button class="att-btn" onclick="closeAttModal()">Cancel</button>
+          <button class="att-btn att-primary" onclick="saveAttRecord()">Save</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="card" style="margin-top:20px">
-    <h3>Recent Records</h3>
-    <div id="att_list" class="stack">
-      <p style="color:var(--mute)">Loading...</p>
+  <div id="att-holiday-modal" class="att-overlay">
+    <div class="att-modal">
+      <h3>Manage Holidays</h3>
+      <div style="max-height:150px; overflow-y:auto; margin-bottom:10px; font-size:12px;" id="att-holiday-list"></div>
+      <label>Add Holiday</label>
+      <input type="date" id="att-new-hol-date" style="margin-bottom:6px;">
+      <input type="text" id="att-new-hol-name" placeholder="Holiday Name" style="margin-bottom:6px;">
+      <button class="att-btn att-primary" onclick="addNewHoliday()" style="width:100%;">Add Holiday</button>
+      <div class="att-actions" style="margin-top:12px;">
+        <button class="att-btn" onclick="closeHolidayModal()">Close</button>
+      </div>
     </div>
   </div>
+  <div id="att-toast">Saved</div>
   `;
 }
 
@@ -4606,10 +4680,610 @@ ${S.users.filter(u => u.active && u.role === 'employee').map(u => `<option value
 
         }
 
+        // ================= ATTENDANCE LOGIC =================
 
+let attCurrentDate = today;
+let attSelectedEmp = null;
+let attCurrentData = [];
+
+
+// ================= TOAST MESSAGE =================
+
+function showAttToast(msg) {
+    const t = document.getElementById('att-toast');
+    t.innerText = msg;
+    t.style.display = 'block';
+
+    setTimeout(() => {
+        t.style.display = 'none';
+    }, 3000);
+}
+
+
+// ================= SWITCH ATTENDANCE TAB =================
+
+function switchAttTab(tab) {
+    ['daily', 'monthly', 'yearly'].forEach(t => {
+        document.getElementById('att-view-' + t).style.display =
+            (t === tab) ? 'block' : 'none';
+
+        document.getElementById('att-tab-' + t).classList.toggle(
+            'on',
+            t === tab
+        );
+    });
+
+    if (tab === 'daily') {
+        renderAttDaily();
+    }
+}
+
+
+// ================= NAVIGATE ATTENDANCE DATE =================
+
+function navigateAttDate(days) {
+    const d = new Date(attCurrentDate);
+    d.setDate(d.getDate() + days);
+
+    attCurrentDate = d.toLocaleDateString('en-CA');
+
+    document.getElementById('att-date-picker').value = attCurrentDate;
+
+    renderAttDaily();
+}
+
+
+// ================= RENDER DAILY ATTENDANCE =================
+
+async function renderAttDaily() {
+
+    attCurrentDate =
+        document.getElementById('att-date-picker').value || today;
+
+    const search = (
+        document.getElementById('att-search').value || ''
+    ).toLowerCase();
+
+    const token = localStorage.getItem('access_token');
+
+    try {
+
+        const res = await fetch(
+            `https://employee360-backend-v1.onrender.com/api/v1/attendance/team-attendance?start_date=${attCurrentDate}&end_date=${attCurrentDate}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }
+        );
+
+        if (res.ok) {
+            attCurrentData = await res.json();
+        } else {
+            attCurrentData = [];
+        }
+
+        const employees = S.users.filter(
+            u => u.active && u.role !== 'admin'
+        );
+
+        let counts = {
+            Present: 0,
+            Late: 0,
+            'Half-Day': 0,
+            Leave: 0,
+            Unmarked: 0
+        };
+
+        const container = document.getElementById('att-shift-container');
+
+        container.innerHTML = '';
+
+        const shifts = {
+            'Morning (9:00 AM)': [],
+            'Exceptions': []
+        };
+
+        employees.forEach(emp => {
+
+            if (search && !emp.name.toLowerCase().includes(search)) {
+                return;
+            }
+
+            if (emp.custom_shift_start) {
+                shifts['Exceptions'].push(emp);
+            } else {
+                shifts['Morning (9:00 AM)'].push(emp);
+            }
+
+        });
+
+
+        // Render employee shifts
+
+        for (const [shiftName, emps] of Object.entries(shifts)) {
+
+            if (emps.length === 0) continue;
+
+            let rowsHtml = '';
+
+            emps.forEach(emp => {
+
+                const record = attCurrentData.find(
+                    a => a.employee_id === parseInt(emp.id)
+                ) || null;
+
+                let status = record ? record.status : 'Unmarked';
+
+                let checkIn =
+                    record && record.check_in
+                        ? record.check_in.substring(0, 5)
+                        : '-';
+
+                let markedAt =
+                    record && record.marked_at
+                        ? new Date(record.marked_at).toLocaleTimeString(
+                            [],
+                            {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }
+                        )
+                        : '-';
+
+
+                // Update attendance counts
+
+                if (status === 'Unmarked') {
+                    counts.Unmarked++;
+                } else if (status.includes('Leave')) {
+                    counts.Leave++;
+                } else if (counts[status] !== undefined) {
+                    counts[status]++;
+                }
+
+
+                // Badge colors
+
+                let badgeColor =
+                    "background:#f1f5f9; color:#64748b; border-color:#cbd5e1";
+
+                if (status === 'Present') {
+                    badgeColor =
+                        "background:#ecfdf5; color:#047857; border-color:#a7f3d0";
+                }
+
+                if (status === 'Late') {
+                    badgeColor =
+                        "background:#fffbeb; color:#b45309; border-color:#fcd34d";
+                }
+
+                if (status === 'Half-Day') {
+                    badgeColor =
+                        "background:#fff1f2; color:#be123c; border-color:#fda4af";
+                }
+
+                if (status.includes('Leave')) {
+                    badgeColor =
+                        "background:#fefce8; color:#854d0e; border-color:#fde047";
+                }
+
+
+                // Employee attendance row
+
+                rowsHtml += `
+                    <div class="att-row"
+                        onclick="openAttModal('${emp.id}', '${esc(emp.name)}', '${emp.custom_shift_start || '09:00'}')">
+
+                        <div>
+                            <div style="font-weight:700; font-size:14px;">
+                                ${esc(emp.name)}
+                            </div>
+
+                            <div class="att-sub">
+                                ${emp.designation || 'Employee'}
+                                | In: ${checkIn}
+                                | Marked: ${markedAt}
+                            </div>
+                        </div>
+
+                        <span class="att-badge" style="${badgeColor}">
+                            ${status}
+                        </span>
+
+                    </div>
+                `;
+
+            });
+
+
+            container.innerHTML += `
+                <div class="att-card">
+
+                    <div class="att-shiftbar">
+                        ${shiftName} Shift
+                    </div>
+
+                    ${rowsHtml}
+
+                </div>
+            `;
+
+        }
+
+
+        // Update attendance summary
+
+        document.getElementById('chip-present').innerText =
+            counts.Present;
+
+        document.getElementById('chip-late').innerText =
+            counts.Late;
+
+        document.getElementById('chip-half').innerText =
+            counts['Half-Day'];
+
+        document.getElementById('chip-leave').innerText =
+            counts.Leave;
+
+        document.getElementById('chip-unmarked').innerText =
+            counts.Unmarked;
+
+
+    } catch (e) {
+
+        console.error(e);
+
+    }
+
+}
+
+
+// ================= OPEN ATTENDANCE MODAL =================
+
+function openAttModal(empId, empName, defaultShift) {
+
+    attSelectedEmp = {
+        id: empId,
+        name: empName,
+        shift: defaultShift
+    };
+
+    document.getElementById('att-modal-name').innerText = empName;
+
+    document.getElementById('att-modal-shift').innerText =
+        `Shift Start: ${defaultShift}`;
+
+    const record = attCurrentData.find(
+        a => a.employee_id === parseInt(empId)
+    );
+
+    document.getElementById('att-checkin').value =
+        record && record.check_in
+            ? record.check_in.substring(0, 5)
+            : defaultShift;
+
+    previewAttStatus();
+
+    document.getElementById('att-mark-modal').classList.add('open');
+
+    setTimeout(() => {
+        document.getElementById('att-checkin').focus();
+    }, 100);
+
+}
+
+
+// ================= CLOSE ATTENDANCE MODAL =================
+
+function closeAttModal() {
+
+    document.getElementById('att-mark-modal').classList.remove('open');
+
+    attSelectedEmp = null;
+
+}
+
+
+// ================= PREVIEW ATTENDANCE STATUS =================
+
+function previewAttStatus() {
+
+    if (!attSelectedEmp) return;
+
+    const timeVal = document.getElementById('att-checkin').value;
+
+    if (!timeVal) return;
+
+    const [h, m] = timeVal.split(':').map(Number);
+
+    const [sH, sM] = attSelectedEmp.shift.split(':').map(Number);
+
+    const inMins = h * 60 + m;
+
+    const shiftMins = sH * 60 + sM;
+
+
+    let status = 'Present';
+
+    let color = "background:#ecfdf5; color:#047857;";
+
+    if (inMins > shiftMins + 180) {
+
+        status = 'Half-Day';
+
+        color = "background:#fff1f2; color:#be123c;";
+
+    } else if (inMins > shiftMins + 5) {
+
+        status = 'Late';
+
+        color = "background:#fffbeb; color:#b45309;";
+
+    }
+
+
+    const el = document.getElementById('att-status-preview');
+
+    el.innerText = status;
+
+    el.style =
+        color +
+        "padding:10px; text-align:center; font-weight:bold; border-radius:8px;";
+
+}
+
+
+// ================= QUICK MARK ATTENDANCE =================
+
+function quickMark(status) {
+
+    if (!attSelectedEmp) return;
+
+    const el = document.getElementById('att-status-preview');
+
+    el.innerText = status;
+
+    el.style =
+        "padding:10px; text-align:center; font-weight:bold; border-radius:8px; background:#e0e7ff; color:#4338ca;";
+
+}
+
+
+// ================= SAVE ATTENDANCE RECORD =================
+
+async function saveAttRecord() {
+
+    if (!attSelectedEmp) return;
+
+    const timeVal = document.getElementById('att-checkin').value;
+
+    const statusVal =
+        document.getElementById('att-status-preview').innerText;
+
+    const token = localStorage.getItem('access_token');
+
+    try {
+
+        const res = await fetch(
+            'https://employee360-backend-v1.onrender.com/api/v1/attendance/mark',
+            {
+                method: 'POST',
+
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+
+                body: JSON.stringify({
+
+                    employee_id: parseInt(attSelectedEmp.id),
+
+                    date: attCurrentDate,
+
+                    status: statusVal,
+
+                    check_in: timeVal ? timeVal + ":00" : null
+
+                })
+
+            }
+        );
+
+        if (!res.ok) {
+            throw new Error("Failed to save");
+        }
+
+        showAttToast('Attendance Saved');
+
+        closeAttModal();
+
+        renderAttDaily();
+
+    } catch (e) {
+
+        alert("Error: " + e.message);
+
+    }
+
+}
+
+
+// ================= MARK ALL EMPLOYEES PRESENT =================
+
+async function markAllPresent() {
+
+    const token = localStorage.getItem('access_token');
+
+    const employees = S.users.filter(
+        u => u.active && u.role !== 'admin'
+    );
+
+    if (!confirm(`Mark all ${employees.length} employees as Present?`)) {
+        return;
+    }
+
+    for (const emp of employees) {
+
+        const shift = emp.custom_shift_start || '09:00';
+
+        await fetch(
+            'https://employee360-backend-v1.onrender.com/api/v1/attendance/mark',
+            {
+                method: 'POST',
+
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+
+                body: JSON.stringify({
+
+                    employee_id: parseInt(emp.id),
+
+                    date: attCurrentDate,
+
+                    status: 'Present',
+
+                    check_in: shift + ":00"
+
+                })
+
+            }
+        );
+
+    }
+
+    showAttToast('All marked Present');
+
+    renderAttDaily();
+
+}
+
+
+// ================= HOLIDAY MODAL =================
+
+function openHolidayModal() {
+
+    document.getElementById('att-holiday-modal').classList.add('open');
+
+    loadHolidays();
+
+}
+
+
+function closeHolidayModal() {
+
+    document.getElementById('att-holiday-modal').classList.remove('open');
+
+}
+
+
+// ================= LOAD HOLIDAYS =================
+
+async function loadHolidays() {
+
+    const token = localStorage.getItem('access_token');
+
+    const res = await fetch(
+        'https://employee360-backend-v1.onrender.com/api/v1/holidays/',
+        {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        }
+    );
+
+    if (!res.ok) return;
+
+    const data = await res.json();
+
+    const list = document.getElementById('att-holiday-list');
+
+    list.innerHTML = data.map(h => `
+
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding:4px 0;">
+
+            <span>${h.date}: ${h.name}</span>
+
+            <button
+                onclick="deleteHoliday(${h.id})"
+                style="color:red; border:none; background:none; cursor:pointer;">
+
+                X
+
+            </button>
+
+        </div>
+
+    `).join('');
+
+}
+
+
+// ================= ADD NEW HOLIDAY =================
+
+async function addNewHoliday() {
+
+    const date = document.getElementById('att-new-hol-date').value;
+
+    const name = document.getElementById('att-new-hol-name').value;
+
+    if (!date || !name) {
+        return alert("Fill both fields");
+    }
+
+    const token = localStorage.getItem('access_token');
+
+    await fetch(
+        'https://employee360-backend-v1.onrender.com/api/v1/holidays/',
+        {
+            method: 'POST',
+
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+
+            body: JSON.stringify({
+                date: date,
+                name: name
+            })
+
+        }
+    );
+
+    loadHolidays();
+
+    document.getElementById('att-new-hol-name').value = '';
+
+}
+
+
+// ================= DELETE HOLIDAY =================
+
+async function deleteHoliday(id) {
+
+    const token = localStorage.getItem('access_token');
+
+    await fetch(
+        `https://employee360-backend-v1.onrender.com/api/v1/holidays/${id}`,
+        {
+            method: 'DELETE',
+
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        }
+    );
+
+    loadHolidays();
+
+}
         /* ============ BOOT ============ */
         load();
         render();
+        
     </script>
 </body>
 
