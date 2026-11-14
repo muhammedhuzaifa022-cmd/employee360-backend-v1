@@ -4261,45 +4261,71 @@ function attLoadDay() { return attLoadRange(currentDate, currentDate); }
 async function attInit() {
     if (!document.getElementById('daily-date-picker')) return;
 
-    // --- FETCH REAL HOLIDAYS FROM DATABASE ---
-    const token = localStorage.getItem('access_token');
-    try {
-        const holRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/holidays/', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (holRes.ok) {
-            const holData = await holRes.json();
-            globalHolidays = holData.map(h => h.date); // Store just the dates like '2026-11-20'
-        }
-    } catch(e) { console.error("Failed to load holidays", e); }
+    // 1. SET THE DATE IMMEDIATELY
+    currentDate = new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Kolkata'
+    });
 
-    // --- INITIALIZE APP ---
-    // --- MAP REAL USERS WITH SHIFTS ---
-att.users = S.users.filter(u => u.active && u.role !== 'admin').map(u => {
-    let shiftType = 'morning';
-    let startTime = '09:00';
-
-    if (u.custom_shift_start) {
-        startTime = u.custom_shift_start;
-        if (startTime.startsWith('13')) {
-            shiftType = 'afternoon'; // 1 PM goes to Afternoon
-        } else if (startTime !== '09:00') {
-            shiftType = 'exceptions'; // 10 AM, 11 AM go to Exceptions
-        }
-    }
-    
-    return { id: u.id.toString(), name: u.name, shift: shiftType, start: startTime };
-});
-// -----------------------------------
-    currentDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     document.getElementById('daily-date-picker').value = currentDate;
     document.getElementById('quick-month-jump').value = currentDate.substring(0, 7);
     document.getElementById('monthly-picker').value = currentDate.substring(0, 7);
+
     updateDateDisplay();
+
+    // 2. LOAD EMPLOYEES IMMEDIATELY
+    if (typeof S !== 'undefined' && S.users) {
+        att.users = S.users
+            .filter(u => u.active && u.role !== 'admin')
+            .map(u => {
+                let shiftType = 'morning';
+                let startTime = '09:00';
+
+                if (u.custom_shift_start) {
+                    startTime = u.custom_shift_start;
+
+                    if (startTime.startsWith('13')) {
+                        shiftType = 'afternoon';
+                    } else if (startTime !== '09:00') {
+                        shiftType = 'exceptions';
+                    }
+                }
+
+                return {
+                    id: u.id.toString(),
+                    name: u.name,
+                    shift: shiftType,
+                    start: startTime
+                };
+            });
+    }
+
     initMonthlyDropdown();
     renderDailyView();
-    
+
+    // 3. FETCH HOLIDAYS & ATTENDANCE
+    const token = localStorage.getItem('access_token');
+
+    try {
+        const holRes = await fetch(
+            'https://employee360-backend-v1.onrender.com/api/v1/holidays/',
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }
+        );
+
+        if (holRes.ok) {
+            const holData = await holRes.json();
+            globalHolidays = holData.map(h => h.date);
+        }
+
+    } catch (e) {
+        console.log("Holidays fetch skipped");
+    }
+
     await attLoadDay();
+
     renderDailyView();
 }
     
