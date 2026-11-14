@@ -54,6 +54,7 @@ class UserMe(BaseModel):
     email: str
     role: UserRole
     designation: str
+    custom_shift_start: str | None = None  # <--- ADDED HERE
     department: DepartmentOut | None
     is_active: bool
     joined_on: date
@@ -117,6 +118,7 @@ class UserCreate(_DepartmentChoice):
                                     description="Default: Associate / Team Lead / Administrator")
     joined_on: date | None = None
     password: str | None = Field(default=None, description="Leave empty to generate a temporary password")
+    custom_shift_start: str | None = Field(default=None, description="HH:MM format like 09:00 or 13:00")  # <--- ADDED HERE
 
     @field_validator("full_name")
     @classmethod
@@ -153,6 +155,7 @@ class UserUpdate(_DepartmentChoice):
     role: UserRole | None = None
     designation: str | None = Field(default=None, min_length=1, max_length=100)
     joined_on: date | None = None
+    custom_shift_start: str | None = None  # <--- ADDED HERE
 
     @field_validator("full_name")
     @classmethod

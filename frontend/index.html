@@ -3489,6 +3489,13 @@ body: ` <label>Full name</label> <input id="f1" placeholder="e.g. Maya Patel">
 <option value="teamlead">Team lead</option>
 <option value="admin">Admin</option>
 </select>
+<label>Shift Timing</label>
+<select id="f6" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm w-full mb-4">
+    <option value="09:00">Morning Shift (9:00 AM)</option>
+    <option value="13:00">Afternoon Shift (1:00 PM)</option>
+    <option value="10:00">Custom (10:00 AM)</option>
+    <option value="11:00">Custom (11:00 AM)</option>
+</select>
 <label>Password</label>
 <input id="f5" type="password" placeholder="e.g. Welcome@123 (or leave blank to auto-generate)">
 `,
@@ -3503,17 +3510,20 @@ const em = $('#f2').value.trim();
 const d = $('#f3').value.trim();
 const r = $('#f4').value;
 const pw = $('#f5').value.trim();
+const st = $('#f6').value;
 if (!n || !em || !d) {
 toast('Name, email and department are required', 'bad');
 return false;
 }
 const token = localStorage.getItem('access_token');
+const shiftVal = document.getElementById('f6').value;
 try {
 const payload = {
 full_name: n,
 email: em,
 department: d,
-role: r
+role: r,
+custom_shift_start: shiftVal + ":00"
 };
 if (pw) {
 payload.password = pw;
@@ -4264,7 +4274,23 @@ async function attInit() {
     } catch(e) { console.error("Failed to load holidays", e); }
 
     // --- INITIALIZE APP ---
-    initEmployees();
+    // --- MAP REAL USERS WITH SHIFTS ---
+att.users = S.users.filter(u => u.active && u.role !== 'admin').map(u => {
+    let shiftType = 'morning';
+    let startTime = '09:00';
+
+    if (u.custom_shift_start) {
+        startTime = u.custom_shift_start;
+        if (startTime.startsWith('13')) {
+            shiftType = 'afternoon'; // 1 PM goes to Afternoon
+        } else if (startTime !== '09:00') {
+            shiftType = 'exceptions'; // 10 AM, 11 AM go to Exceptions
+        }
+    }
+    
+    return { id: u.id.toString(), name: u.name, shift: shiftType, start: startTime };
+});
+// -----------------------------------
     currentDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     document.getElementById('daily-date-picker').value = currentDate;
     document.getElementById('quick-month-jump').value = currentDate.substring(0, 7);
