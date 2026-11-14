@@ -4257,6 +4257,28 @@ console.error('Could not load attendance:', e);
 }
 }
 function attLoadDay() { return attLoadRange(currentDate, currentDate); }
+// ================= GLOBAL ATTENDANCE STATE =================
+const ATT_API = { 
+    users: 'https://employee360-backend-v1.onrender.com/api/v1/users', 
+    mark: 'https://employee360-backend-v1.onrender.com/api/v1/attendance/mark', 
+    day: 'https://employee360-backend-v1.onrender.com/api/v1/attendance' 
+};
+
+const att = { 
+    users: [], 
+    records: {}, 
+    date: '', 
+    tab: 'morning', 
+    busy: false,
+    presentId: null, 
+    markId: null, 
+    shiftKey: null,
+    shiftDef: { morning: '09:00', afternoon: '13:00' }, 
+    shiftOv: {} 
+};
+
+
+// ===========================================================
 // Router-triggered init (render() calls setTimeout(attInit, 100) when view === 'attendance')
 async function attInit() {
     if (!document.getElementById('daily-date-picker')) return;
