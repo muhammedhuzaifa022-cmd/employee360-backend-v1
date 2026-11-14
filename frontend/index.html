@@ -1963,7 +1963,7 @@ joined: u.joined_on,
 // Optional shift fields (used by the Attendance module if your backend provides them)
 shift: u.shift || u.shift_name || '',
 shift_start: u.shift_start || null,
-custom_shift_start: u.custom_shift_start || null
+custom_shift_start: u.custom_shift_start 
 }));
 // 3. Fetch Projects
 const projRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/projects', { headers });
@@ -4261,74 +4261,57 @@ function attLoadDay() { return attLoadRange(currentDate, currentDate); }
 async function attInit() {
     if (!document.getElementById('daily-date-picker')) return;
 
-    // 1. SET THE DATE IMMEDIATELY
-    currentDate = new Date().toLocaleDateString('en-CA', {
-        timeZone: 'Asia/Kolkata'
-    });
+    // 1. Set the date
+    att.date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    document.getElementById('daily-date-picker').value = att.date;
+    document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
+    document.getElementById('monthly-picker').value = att.date.substring(0, 7);
+    
+    // (Optional: if updateDateDisplay exists)
+    if(typeof updateDateDisplay === 'function') updateDateDisplay();
 
-    document.getElementById('daily-date-picker').value = currentDate;
-    document.getElementById('quick-month-jump').value = currentDate.substring(0, 7);
-    document.getElementById('monthly-picker').value = currentDate.substring(0, 7);
-
-    updateDateDisplay();
-
-    // 2. LOAD EMPLOYEES IMMEDIATELY
+    // 2. Map real users to the new UI format
     if (typeof S !== 'undefined' && S.users) {
-        att.users = S.users
-            .filter(u => u.active && u.role !== 'admin')
-            .map(u => {
-                let shiftType = 'morning';
-                let startTime = '09:00';
-
-                if (u.custom_shift_start) {
-                    startTime = u.custom_shift_start;
-
-                    if (startTime.startsWith('13')) {
-                        shiftType = 'afternoon';
-                    } else if (startTime !== '09:00') {
-                        shiftType = 'exceptions';
-                    }
-                }
-
-                return {
-                    id: u.id.toString(),
-                    name: u.name,
-                    shift: shiftType,
-                    start: startTime
-                };
-            });
-    }
-
-    initMonthlyDropdown();
-    renderDailyView();
-
-    // 3. FETCH HOLIDAYS & ATTENDANCE
-    const token = localStorage.getItem('access_token');
-
-    try {
-        const holRes = await fetch(
-            'https://employee360-backend-v1.onrender.com/api/v1/holidays/',
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`
+        att.users = S.users.filter(u => u.active && u.role !== 'admin').map(u => {
+            let shiftType = 'morning';
+            let startTime = '09:00';
+            
+            // Check if the user has a custom shift saved
+            if (u.custom_shift_start) {
+                startTime = u.custom_shift_start;
+                if (startTime.startsWith('13')) {
+                    shiftType = 'afternoon'; 
+                } else if (startTime !== '09:00') {
+                    shiftType = 'exceptions'; 
                 }
             }
-        );
+            
+            return { 
+                id: u.id.toString(), 
+                name: u.name, 
+                shift: shiftType, 
+                start: startTime 
+            };
+        });
+    }
 
+    // 3. Load the data and draw the UI immediately
+    initMonthlyDropdown(); // If this exists
+    attLoadDay(); // Fetch today's attendance
+    attRender(); // THIS IS THE NEW DRAWING FUNCTION!
+
+    // 4. Fetch holidays in the background
+    const token = localStorage.getItem('access_token');
+    try {
+        const holRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/holidays/', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (holRes.ok) {
             const holData = await holRes.json();
             globalHolidays = holData.map(h => h.date);
         }
-
-    } catch (e) {
-        console.log("Holidays fetch skipped");
-    }
-
-    await attLoadDay();
-
-    renderDailyView();
+    } catch(e) { console.log("Holidays fetch skipped"); }
 }
-    
 
 // Single guarded keyboard handler for the attendance modals (safe on every other view)
 window.addEventListener('keydown', (e) => {
