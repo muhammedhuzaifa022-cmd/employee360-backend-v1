@@ -4281,35 +4281,63 @@ const att = {
 // ===========================================================
 // Router-triggered init (render() calls setTimeout(attInit, 100) when view === 'attendance')
 async function attInit() {
-    if (!document.getElementById('daily-date-picker')) return;
+    console.log("1. Started attInit");
+
+    if (!document.getElementById('daily-date-picker')) {
+        console.log("ERROR: daily-date-picker not found on page!");
+        return;
+    }
 
     // 1. Set the date
-    att.date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    document.getElementById('daily-date-picker').value = att.date;
-    document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
-    document.getElementById('monthly-picker').value = att.date.substring(0, 7);
+    try {
+        att.date = new Date().toLocaleDateString('en-CA', {
+            timeZone: 'Asia/Kolkata'
+        });
 
-    // 2. Fetch employees DIRECTLY from the database
+        document.getElementById('daily-date-picker').value = att.date;
+        document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
+        document.getElementById('monthly-picker').value = att.date.substring(0, 7);
+
+        console.log("2. Date set to:", att.date);
+
+    } catch(e) {
+        console.log("ERROR setting date:", e);
+    }
+
+    // 2. Fetch employees
     const token = localStorage.getItem('access_token');
 
+    console.log("3. Token exists:", token ? "Yes" : "No");
+
     try {
-        const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', {
-            headers: {
-                'Authorization': `Bearer ${token}`
+        console.log("4. Fetching employees from Render...");
+
+        const res = await fetch(
+            'https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100',
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             }
-        });
+        );
+
+        console.log("5. Fetch response status:", res.status);
 
         if (res.ok) {
             const data = await res.json();
 
-            // Map them to the format the Attendance page wants
+            console.log(
+                "6. Data received:",
+                data.items ? data.items.length : 0,
+                "users"
+            );
+
             att.users = data.items
                 .filter(u => u.is_active && u.role !== 'admin')
                 .map(u => {
                     let shiftType = 'morning';
                     let startTime = '09:00';
 
-                    // Check if the user has a custom shift from your database
                     if (u.custom_shift_start) {
                         startTime = u.custom_shift_start;
 
@@ -4327,35 +4355,32 @@ async function attInit() {
                         start: startTime
                     };
                 });
+
+            console.log("7. Processed users for attendance:", att.users.length);
+
+        } else {
+            console.log("ERROR: Failed to fetch users. Status:", res.status);
         }
-    } catch (e) {
-        console.error("Error fetching users:", e);
+
+    } catch(e) {
+        console.log("ERROR fetching users:", e);
     }
 
-    // 3. Fetch holidays
+    // 3. Draw the UI
     try {
-        const holRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/holidays/', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        console.log("8. Calling attRender...");
 
-        if (holRes.ok) {
-            const holData = await holRes.json();
-            globalHolidays = holData.map(h => h.date);
+        if (typeof attRender === 'function') {
+            attRender();
+            console.log("9. attRender finished.");
+        } else {
+            console.log("ERROR: attRender is not defined!");
         }
-    } catch (e) {
-        console.error("Failed to load holidays", e);
-    }
 
-    // 4. Load existing attendance and draw the screen
-    await attLoadDay();
-
-    if (typeof attRender === 'function') {
-        attRender();
+    } catch(e) {
+        console.log("ERROR in attRender:", e);
     }
 }
-// Single guarded keyboard handler for the attendance modals (safe on every other view)
 window.addEventListener('keydown', (e) => {
 const em = document.getElementById('employee-modal');
 if (e.key === 'Escape') {
