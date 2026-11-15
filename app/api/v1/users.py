@@ -12,7 +12,7 @@ Employees (users) endpoints - the Team page and admin tools.
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import AdminUser, CurrentUser, DbSession
 from app.models.enums import UserRole
@@ -80,12 +80,33 @@ def create_user(body: UserCreate, admin: AdminUser, db: DbSession):
     return UserCreatedResponse(user=out, temporary_password=temp)
 
 
-@router.patch("/{user_id}", response_model=UserOut, summary="Edit employee (admin)")
-def update_user(user_id: int, body: UserUpdate, admin: AdminUser, db: DbSession):
-    updated = user_service.update_user(db, admin, user_id, body)
-    out = UserOut.model_validate(updated)
-    out.stats = user_service.stats_for(db, [updated.id])[updated.id]
-    return out
+@router.patch("/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: int,
+    user_in: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Ensure only Admins can do this
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    # Prevent changing own role
+    if user_id == current_user.id and user_in.role and user_in.role != current_user.role:
+        raise HTTPException(status_code=400, detail="You cannot change your own role")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    update_data = user_in.model_dump(exclude_unset=True)
+    
+    for field, value in update_data.items():
+        setattr(user, field, value)
+        
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.patch("/{user_id}/status", response_model=UserOut,
