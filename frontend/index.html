@@ -3468,7 +3468,12 @@ return `<div class="card pcard">
 <div class="ph">${avatar(u.name, 42)}<div style="flex:1;min-width:0"><b>${esc(u.name)}</b><small>${esc(u.desig || 'Associate')} · ${esc(u.dept)}</small></div>${u.active ? '' : '<span class="tag mute">Inactive</span>'}</div>
 <div class="nums"><span class="tag acc">${open} open</span><span class="tag ok">${done} done</span>${late ? `<span class="tag bad">${late} overdue</span>` : ''}<span class="tag mute">${u.role}</span></div>
 ${p ? `<div><div class="row" style="justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:800;color:var(--mute);text-transform:uppercase;letter-spacing:.5px">Score</span><b style="font-size:12.5px">${pc(p.o)}</b></div>${bar(p.o, p.o >= 80 ? 'ok' : p.o >= 50 ? '' : 'warn')}</div>` : `<p style="font-size:11.5px;color:var(--mute);margin:0">No tasks yet</p>`}
-${isAdmin() && u.id !== S.me ? `<button class="btn ghost sm" onclick="togU('${u.id}')" style="width:100%">${u.active ? 'Deactivate' : 'Activate'}</button>` : ''}
+${isAdmin() && u.id !== S.me ? `
+    <div class="flex space-x-2 mt-2" style="width:100%">
+        <button class="btn ghost sm" style="flex:1" onclick="editUser('${u.id}')">Edit</button>
+        <button class="btn ghost sm" style="flex:1" onclick="togU('${u.id}')">${u.active ? 'Deactivate' : 'Activate'}</button>
+    </div>
+` : ''}
 </div>`;
 }).join('')}
 </div>
@@ -3519,11 +3524,11 @@ const token = localStorage.getItem('access_token');
 const shiftVal = document.getElementById('f6').value;
 try {
 const payload = {
-full_name: n,
-email: em,
-department: d,
-role: r,
-custom_shift_start: shiftVal + ":00"
+    full_name: n,
+    email: em,
+    department: d,
+    role: r,
+    custom_shift_start: document.getElementById('f6').value + ":00" // Morning 09:00 or Afternoon 13:00
 };
 if (pw) {
 payload.password = pw;
@@ -4281,105 +4286,37 @@ const att = {
 // ===========================================================
 // Router-triggered init (render() calls setTimeout(attInit, 100) when view === 'attendance')
 async function attInit() {
-    console.log("1. Started attInit");
+    if (!document.getElementById('daily-date-picker')) return;
 
-    if (!document.getElementById('daily-date-picker')) {
-        console.log("ERROR: daily-date-picker not found on page!");
-        return;
-    }
-
-    // 1. Set the date
-    try {
-        att.date = new Date().toLocaleDateString('en-CA', {
-            timeZone: 'Asia/Kolkata'
-        });
-
-        document.getElementById('daily-date-picker').value = att.date;
-        document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
-        document.getElementById('monthly-picker').value = att.date.substring(0, 7);
-
-        console.log("2. Date set to:", att.date);
-
-    } catch(e) {
-        console.log("ERROR setting date:", e);
-    }
-
-    // 2. Fetch employees
-    const token = localStorage.getItem('access_token');
-
-    console.log("3. Token exists:", token ? "Yes" : "No");
-
-    try {
-        console.log("4. Fetching employees from Render...");
-
-        const res = await fetch(
-            'https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100',
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`
+    // 1. Set date
+    att.date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    document.getElementById('daily-date-picker').value = att.date;
+    document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
+    document.getElementById('monthly-picker').value = att.date.substring(0, 7);
+    
+    // 2. Map real users & SHIFTS
+    if (typeof S !== 'undefined' && S.users) {
+        att.users = S.users.filter(u => u.active && u.role !== 'admin').map(u => {
+            let shiftType = 'morning';
+            let startTime = '09:00';
+            
+            // Check if user has a custom shift
+            if (u.custom_shift_start) {
+                startTime = u.custom_shift_start;
+                if (startTime.startsWith('13')) {
+                    shiftType = 'afternoon'; 
+                } else if (startTime !== '09:00') {
+                    shiftType = 'exceptions'; 
                 }
             }
-        );
-
-        console.log("5. Fetch response status:", res.status);
-
-        if (res.ok) {
-            const data = await res.json();
-
-            console.log(
-                "6. Data received:",
-                data.items ? data.items.length : 0,
-                "users"
-            );
-
-            att.users = data.items
-                .filter(u => u.is_active && u.role !== 'admin')
-                .map(u => {
-                    let shiftType = 'morning';
-                    let startTime = '09:00';
-
-                    if (u.custom_shift_start) {
-                        startTime = u.custom_shift_start;
-
-                        if (startTime.startsWith('13')) {
-                            shiftType = 'afternoon';
-                        } else if (startTime !== '09:00') {
-                            shiftType = 'exceptions';
-                        }
-                    }
-
-                    return {
-                        id: u.id.toString(),
-                        name: u.full_name,
-                        shift: shiftType,
-                        start: startTime
-                    };
-                });
-
-            console.log("7. Processed users for attendance:", att.users.length);
-
-        } else {
-            console.log("ERROR: Failed to fetch users. Status:", res.status);
-        }
-
-    } catch(e) {
-        console.log("ERROR fetching users:", e);
+            return { id: u.id.toString(), name: u.name, shift: shiftType, start: startTime };
+        });
     }
 
-    // 3. Draw the UI
-    try {
-        console.log("8. Calling attRender...");
-
-        if (typeof attRender === 'function') {
-            attRender();
-            console.log("9. attRender finished.");
-        } else {
-            console.log("ERROR: attRender is not defined!");
-        }
-
-    } catch(e) {
-        console.log("ERROR in attRender:", e);
-    }
+    // 3. Load data and draw
+    if (typeof initMonthlyDropdown === 'function') initMonthlyDropdown();
+    await attLoadDay();
+    if (typeof attRender === 'function') attRender();
 }
 window.addEventListener('keydown', (e) => {
 const em = document.getElementById('employee-modal');
@@ -5330,6 +5267,66 @@ toast.classList.remove('translate-y-28', 'opacity-0');
 setTimeout(() => toast.classList.add('translate-y-28', 'opacity-0'), 3500);
 }
 /* ============ BOOT ============ */
+
+function editUser(id) {
+    const u = U(id);
+
+    openModal({
+        title: 'Edit Employee',
+        body: `
+            <label>Role</label>
+            <select id="e_role" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm w-full mb-4">
+                <option value="employee" ${u.role === 'employee' ? 'selected' : ''}>Employee</option>
+                <option value="teamlead" ${u.role === 'teamlead' ? 'selected' : ''}>Team Lead</option>
+                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+            </select>
+
+            <label>Shift Timing</label>
+            <select id="e_shift" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm w-full mb-4">
+                <option value="09:00" ${u.custom_shift_start === '09:00' || !u.custom_shift_start ? 'selected' : ''}>Morning (9:00 AM)</option>
+                <option value="13:00" ${u.custom_shift_start === '13:00' ? 'selected' : ''}>Afternoon (1:00 PM)</option>
+            </select>
+        `,
+        actions: [
+            { label: 'Cancel', kind: 'ghost' },
+            {
+                label: 'Save Changes',
+                kind: 'primary',
+                onClick: async () => {
+
+                    const newRole = document.getElementById('e_role').value;
+                    const newShift = document.getElementById('e_shift').value;
+                    const token = localStorage.getItem('access_token');
+
+                    try {
+                        const res = await fetch(`http://127.0.0.1:8000/api/v1/users/${id}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                role: newRole,
+                                custom_shift_start: newShift
+                            })
+                        });
+
+                        if (!res.ok) {
+                            throw new Error("Failed to update employee");
+                        }
+
+                        toast('Employee updated successfully!');
+                        await fetchRealData();
+
+                    } catch (err) {
+                        alert(err.message);
+                    }
+                }
+            }
+        ]
+    });
+}
+
 load();
 render();
 </script>
