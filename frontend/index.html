@@ -5346,8 +5346,10 @@ setTimeout(() => toast.classList.add('translate-y-28', 'opacity-0'), 3500);
 /* ============ BOOT ============ */
 
 
+
 function editUser(id) {
     const u = U(id);
+    const shift = u.custom_shift_start?.substring(0, 5);
 
     openModal({
         title: 'Edit Employee',
@@ -5361,8 +5363,8 @@ function editUser(id) {
 
             <label>Shift Timing</label>
             <select id="e_shift" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm w-full mb-4">
-                <option value="09:00:00" ${u.custom_shift_start === '09:00' || !u.custom_shift_start ? 'selected' : ''}>Morning (9:00 AM)</option>
-                <option value="13:00:00" ${u.custom_shift_start === '13:00' ? 'selected' : ''}>Afternoon (1:00 PM)</option>
+                <option value="09:00:00" ${shift === '09:00' || !shift ? 'selected' : ''}>Morning (9:00 AM)</option>
+                <option value="13:00:00" ${shift === '13:00' ? 'selected' : ''}>Afternoon (1:00 PM)</option>
             </select>
         `,
         actions: [
@@ -5371,20 +5373,17 @@ function editUser(id) {
                 label: 'Save Changes',
                 kind: 'primary',
                 onClick: async () => {
+
                     const newRole = document.getElementById('e_role').value;
                     const newShift = document.getElementById('e_shift').value;
                     const token = localStorage.getItem('access_token');
 
-                    // Disable button to prevent double clicks
-                    const btn = document.querySelector('.modal-foot button[data-act="1"]');
+                    const url = `https://employee360-backend-v1.onrender.com/api/v1/users/${id}`;
 
-                    if (btn) {
-                        btn.innerText = "Saving...";
-                        btn.disabled = true;
-                    }
+                    console.log("Sending PATCH to:", url);
 
                     try {
-                        const res = await fetch(`https://employee360-backend-v1.onrender.com/api/v1/users/${id}`, {
+                        const res = await fetch(url, {
                             method: 'PATCH',
                             headers: {
                                 'Authorization': `Bearer ${token}`,
@@ -5398,7 +5397,8 @@ function editUser(id) {
 
                         if (!res.ok) {
                             const errorData = await res.text();
-                            throw new Error(errorData);
+                            alert("Server Error: " + errorData);
+                            return false;
                         }
 
                         toast('Employee updated successfully!');
@@ -5408,18 +5408,14 @@ function editUser(id) {
                         closeM();
 
                     } catch (err) {
-                        alert("Update Failed: " + err.message);
-
-                        if (btn) {
-                            btn.innerText = "Save Changes";
-                            btn.disabled = false;
-                        }
+                        alert("Network Error: " + err.message);
                     }
                 }
             }
         ]
     });
 }
+
 
 
 load();
