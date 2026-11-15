@@ -1,5 +1,5 @@
 """Request and response shapes for users (employees) and departments."""
-from datetime import date, datetime
+from datetime import date, datetime, time  # <-- IMPORTED time HERE
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -39,10 +39,10 @@ DepartmentUpdate = DepartmentCreate
 class UserStats(BaseModel):
     """The counters on a Team card."""
     total: int = 0
-    open: int = 0          # not Completed
-    done: int = 0          # Completed
-    overdue: int = 0       # not Completed and due date before today
-    in_review: int = 0     # Submitted for Review
+    open: int = 0
+    done: int = 0
+    overdue: int = 0
+    in_review: int = 0
 
 
 class UserMe(BaseModel):
@@ -54,12 +54,22 @@ class UserMe(BaseModel):
     email: str
     role: UserRole
     designation: str
-    custom_shift_start: str | None = None  # <--- ADDED HERE
+    custom_shift_start: str | None = None
     department: DepartmentOut | None
     is_active: bool
     joined_on: date
     last_login_at: datetime | None
     created_at: datetime
+
+    # THIS FIXES THE 500 ERROR: Converts the DB time object to a string
+    @field_validator("custom_shift_start", mode="before")
+    @classmethod
+    def format_shift_time(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, time):
+            return v.strftime("%H:%M")
+        return str(v)
 
 
 class UserOut(UserMe):
@@ -114,11 +124,10 @@ class UserCreate(_DepartmentChoice):
     full_name: str = Field(min_length=2, max_length=120, examples=["Maya Patel"])
     email: EmailStr = Field(examples=["maya@company.com"])
     role: UserRole = UserRole.EMPLOYEE
-    designation: str | None = Field(default=None, max_length=100,
-                                    description="Default: Associate / Team Lead / Administrator")
+    designation: str | None = Field(default=None, max_length=100)
     joined_on: date | None = None
-    password: str | None = Field(default=None, description="Leave empty to generate a temporary password")
-    custom_shift_start: str | None = Field(default=None, description="HH:MM format like 09:00 or 13:00")  # <--- ADDED HERE
+    password: str | None = Field(default=None)
+    custom_shift_start: str | None = Field(default=None, description="HH:MM format like 09:00 or 13:00")
 
     @field_validator("full_name")
     @classmethod
@@ -130,11 +139,6 @@ class UserCreate(_DepartmentChoice):
     def lower_email(cls, v: str) -> str:
         return v.strip().lower()
 
-    @field_validator("designation")
-    @classmethod
-    def tidy_designation(cls, v: str | None) -> str | None:
-        return (clean_spaces(v) or None) if v else None
-
     @field_validator("password")
     @classmethod
     def strong(cls, v: str | None) -> str | None:
@@ -142,20 +146,18 @@ class UserCreate(_DepartmentChoice):
 
     @model_validator(mode="after")
     def department_required(self):
-        # The frontend form always asks for a department.
         if self.department_id is None and not self.department:
             raise ValueError("Department is required")
         return self
 
 
 class UserUpdate(_DepartmentChoice):
-    """Admin edits. Send only the fields you want to change."""
     full_name: str | None = Field(default=None, min_length=2, max_length=120)
     email: EmailStr | None = None
     role: UserRole | None = None
     designation: str | None = Field(default=None, min_length=1, max_length=100)
     joined_on: date | None = None
-    custom_shift_start: str | None = None  # <--- ADDED HERE
+    custom_shift_start: str | None = None
 
     @field_validator("full_name")
     @classmethod
@@ -167,18 +169,13 @@ class UserUpdate(_DepartmentChoice):
     def lower_email(cls, v: str | None) -> str | None:
         return v.strip().lower() if v else v
 
-    @field_validator("designation")
-    @classmethod
-    def tidy_designation(cls, v: str | None) -> str | None:
-        return clean_spaces(v) if v else v
-
 
 class UserStatusUpdate(BaseModel):
     is_active: bool
 
 
 class PasswordResetRequest(BaseModel):
-    new_password: str | None = Field(default=None, description="Leave empty to generate one")
+    new_password: str | None = Field(default=None)
 
     @field_validator("new_password")
     @classmethod
