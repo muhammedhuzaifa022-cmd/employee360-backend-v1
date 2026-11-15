@@ -4294,29 +4294,51 @@ async function attInit() {
     document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
     document.getElementById('monthly-picker').value = att.date.substring(0, 7);
     
-    // 2. Map real users & SHIFTS
-    if (typeof S !== 'undefined' && S.users) {
-        att.users = S.users.filter(u => u.active && u.role !== 'admin').map(u => {
-            let shiftType = 'morning';
-            let startTime = '09:00';
-            
-            // Check if user has a custom shift
-            if (u.custom_shift_start) {
-                startTime = u.custom_shift_start;
-                if (startTime.startsWith('13')) {
-                    shiftType = 'afternoon'; 
-                } else if (startTime !== '09:00') {
-                    shiftType = 'exceptions'; 
-                }
-            }
-            return { id: u.id.toString(), name: u.name, shift: shiftType, start: startTime };
+    // 2. Fetch employees DIRECTLY from the database (Bypasses S.users issues)
+    const token = localStorage.getItem('access_token');
+    try {
+        const res = await fetch('http://127.0.0.1:8000/api/v1/users?page_size=100', {
+            headers: { 'Authorization': `Bearer ${token}` }
         });
-    }
+        if (res.ok) {
+            const data = await res.json();
+            att.users = data.items
+                .filter(u => u.is_active && u.role !== 'admin') // Only show active employees
+                .map(u => {
+                    let shiftType = 'morning';
+                    let startTime = '09:00';
+                    
+                    if (u.custom_shift_start) {
+                        startTime = u.custom_shift_start;
+                        if (startTime.startsWith('13')) {
+                            shiftType = 'afternoon';
+                        } else if (startTime !== '09:00') {
+                            shiftType = 'exceptions';
+                        }
+                    }
+                    return { id: u.id.toString(), name: u.full_name, shift: shiftType, start: startTime };
+                });
+        } else {
+            console.error("Failed to fetch users. Status:", res.status);
+        }
+    } catch(e) { console.error("Error fetching users:", e); }
 
-    // 3. Load data and draw
-    if (typeof initMonthlyDropdown === 'function') initMonthlyDropdown();
+    // 3. Fetch holidays
+    try {
+        const holRes = await fetch('http://127.0.0.1:8000/api/v1/holidays/', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (holRes.ok) {
+            const holData = await holRes.json();
+            globalHolidays = holData.map(h => h.date);
+        }
+    } catch(e) { console.error("Failed to load holidays", e); }
+
+    // 4. Load existing attendance and draw the screen
     await attLoadDay();
-    if (typeof attRender === 'function') attRender();
+    if (typeof attRender === 'function') {
+        attRender();
+    }
 }
 window.addEventListener('keydown', (e) => {
 const em = document.getElementById('employee-modal');
