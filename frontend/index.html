@@ -4284,80 +4284,83 @@ const att = {
 
 
 // ===========================================================
-// Router-triggered init (render() calls setTimeout(attInit, 100) when view === 'attendance')
 async function attInit() {
-    console.log("CHECKPOINT 1: attInit started");
-    
-    if (!document.getElementById('daily-date-picker')) {
-        console.log("ERROR: daily-date-picker element not found!");
+    console.log("1. attInit started");
+    if (!document.getElementById('list-morning')) {
+        console.log("ERROR: HTML elements missing!");
         return;
     }
 
-    att.date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    
     const token = localStorage.getItem('access_token');
+    
     try {
-        console.log("CHECKPOINT 2: Fetching users...");
+        console.log("2. Fetching users...");
         const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (res.ok) {
             const data = await res.json();
-            console.log("CHECKPOINT 3: Users fetched. Total items:", data.items.length);
+            console.log("3. Data received. Total users:", data.items.length);
             
+            // Map the users
             att.users = data.items
                 .filter(u => u.is_active && u.role !== 'admin')
                 .map(u => {
                     let shiftType = 'morning';
                     let startTime = '09:00';
+                    
                     if (u.custom_shift_start) {
                         startTime = u.custom_shift_start;
-                        if (startTime.startsWith('13')) shiftType = 'afternoon';
-                        else if (startTime !== '09:00') shiftType = 'exceptions';
+                        // Check if it starts with 13 (for 13:00:00)
+                        if (startTime.startsWith('13')) {
+                            shiftType = 'afternoon'; 
+                        } else if (!startTime.startsWith('09')) {
+                            shiftType = 'exceptions'; 
+                        }
                     }
                     return { id: u.id.toString(), name: u.full_name, shift: shiftType, start: startTime };
                 });
-            console.log("CHECKPOINT 4: Mapped users for UI:", att.users.length);
-        }
-    } catch(e) { console.error("Fetch error:", e); }
-
-    try {
-        console.log("CHECKPOINT 5: Calling attRender...");
-        if (typeof attRender === 'function') {
-            attRender();
+                
+            console.log("4. Mapped users for UI:", att.users.length);
         } else {
-            console.log("ERROR: attRender function is missing!");
+            console.log("ERROR: Failed to fetch users. Status:", res.status);
         }
-    } catch(e) {
-        console.error("Render error:", e);
+    } catch(e) { 
+        console.log("FETCH ERROR:", e); 
     }
+
+    // Draw the screen
+    console.log("5. Calling attRender...");
+    attRender(); 
 }
 function attRender() {
+    console.log("6. attRender started");
+    
     const listMorning = document.getElementById('list-morning');
     const listAfternoon = document.getElementById('list-afternoon');
     const listExceptions = document.getElementById('list-exceptions');
     
-    // If the elements aren't on the page yet, stop.
-    if (!listMorning) return; 
+    if (!listMorning) {
+        console.log("ERROR: list-morning div not found!");
+        return;
+    }
 
-    // Clear the lists before drawing new ones
+    // Clear the lists
     listMorning.innerHTML = '';
     listAfternoon.innerHTML = '';
     listExceptions.innerHTML = '';
 
-    // If there are no users, show a message
     if (!att.users || att.users.length === 0) {
-        listMorning.innerHTML = '<div class="p-4 text-center text-slate-500 text-sm">No employees found.</div>';
+        listMorning.innerHTML = '<div class="p-4 text-center text-slate-500">No employees found.</div>';
         return;
     }
 
     let countMorning = 0, countAfternoon = 0, countExceptions = 0;
 
-    // Loop through all employees and draw their cards
     att.users.forEach(emp => {
         const rowHTML = `
-            <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="openAttModal('${emp.id}', '${emp.name}', '${emp.start}')">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50 cursor-pointer">
                 <div class="flex items-center space-x-3">
                     <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
                         ${emp.name.substring(0, 2).toUpperCase()}
@@ -4369,12 +4372,10 @@ function attRender() {
                 </div>
                 <div class="flex items-center space-x-3">
                     <span class="px-2 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded">Unmarked</span>
-                    <button class="text-indigo-600 text-xs font-bold">Mark &rarr;</button>
                 </div>
             </div>
         `;
 
-        // Put them in the correct tab based on their shift
         if (emp.shift === 'morning') {
             listMorning.innerHTML += rowHTML;
             countMorning++;
@@ -4387,10 +4388,11 @@ function attRender() {
         }
     });
 
-    // Update the numbers on the tabs (Morning 5, Afternoon 2, etc.)
     if (document.getElementById('badge-morning')) document.getElementById('badge-morning').innerText = countMorning;
     if (document.getElementById('badge-afternoon')) document.getElementById('badge-afternoon').innerText = countAfternoon;
     if (document.getElementById('badge-exceptions')) document.getElementById('badge-exceptions').innerText = countExceptions;
+    
+    console.log("7. attRender finished. Morning:", countMorning, "Afternoon:", countAfternoon);
 }
 window.addEventListener('keydown', (e) => {
 const em = document.getElementById('employee-modal');
