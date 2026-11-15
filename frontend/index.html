@@ -4333,6 +4333,65 @@ async function attInit() {
         console.error("Render error:", e);
     }
 }
+function attRender() {
+    const listMorning = document.getElementById('list-morning');
+    const listAfternoon = document.getElementById('list-afternoon');
+    const listExceptions = document.getElementById('list-exceptions');
+    
+    // If the elements aren't on the page yet, stop.
+    if (!listMorning) return; 
+
+    // Clear the lists before drawing new ones
+    listMorning.innerHTML = '';
+    listAfternoon.innerHTML = '';
+    listExceptions.innerHTML = '';
+
+    // If there are no users, show a message
+    if (!att.users || att.users.length === 0) {
+        listMorning.innerHTML = '<div class="p-4 text-center text-slate-500 text-sm">No employees found.</div>';
+        return;
+    }
+
+    let countMorning = 0, countAfternoon = 0, countExceptions = 0;
+
+    // Loop through all employees and draw their cards
+    att.users.forEach(emp => {
+        const rowHTML = `
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="openAttModal('${emp.id}', '${emp.name}', '${emp.start}')">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                        ${emp.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                        <div class="font-bold text-sm text-slate-800">${emp.name}</div>
+                        <div class="text-xs text-slate-500">Shift Start: ${emp.start}</div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <span class="px-2 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded">Unmarked</span>
+                    <button class="text-indigo-600 text-xs font-bold">Mark &rarr;</button>
+                </div>
+            </div>
+        `;
+
+        // Put them in the correct tab based on their shift
+        if (emp.shift === 'morning') {
+            listMorning.innerHTML += rowHTML;
+            countMorning++;
+        } else if (emp.shift === 'afternoon') {
+            listAfternoon.innerHTML += rowHTML;
+            countAfternoon++;
+        } else {
+            listExceptions.innerHTML += rowHTML;
+            countExceptions++;
+        }
+    });
+
+    // Update the numbers on the tabs (Morning 5, Afternoon 2, etc.)
+    if (document.getElementById('badge-morning')) document.getElementById('badge-morning').innerText = countMorning;
+    if (document.getElementById('badge-afternoon')) document.getElementById('badge-afternoon').innerText = countAfternoon;
+    if (document.getElementById('badge-exceptions')) document.getElementById('badge-exceptions').innerText = countExceptions;
+}
 window.addEventListener('keydown', (e) => {
 const em = document.getElementById('employee-modal');
 if (e.key === 'Escape') {
