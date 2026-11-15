@@ -4294,16 +4294,16 @@ async function attInit() {
     document.getElementById('quick-month-jump').value = att.date.substring(0, 7);
     document.getElementById('monthly-picker').value = att.date.substring(0, 7);
     
-    // 2. Fetch employees DIRECTLY from the database (Bypasses S.users issues)
+    // 2. Fetch employees from LIVE RENDER (Changed from 127.0.0.1)
     const token = localStorage.getItem('access_token');
     try {
-        const res = await fetch('http://127.0.0.1:8000/api/v1/users?page_size=100', {
+        const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
             const data = await res.json();
             att.users = data.items
-                .filter(u => u.is_active && u.role !== 'admin') // Only show active employees
+                .filter(u => u.is_active && u.role !== 'admin')
                 .map(u => {
                     let shiftType = 'morning';
                     let startTime = '09:00';
@@ -4318,14 +4318,12 @@ async function attInit() {
                     }
                     return { id: u.id.toString(), name: u.full_name, shift: shiftType, start: startTime };
                 });
-        } else {
-            console.error("Failed to fetch users. Status:", res.status);
         }
     } catch(e) { console.error("Error fetching users:", e); }
 
-    // 3. Fetch holidays
+    // 3. Fetch holidays from LIVE RENDER (Changed from 127.0.0.1)
     try {
-        const holRes = await fetch('http://127.0.0.1:8000/api/v1/holidays/', {
+        const holRes = await fetch('https://employee360-backend-v1.onrender.com/api/v1/holidays/', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         if (holRes.ok) {
@@ -4334,7 +4332,7 @@ async function attInit() {
         }
     } catch(e) { console.error("Failed to load holidays", e); }
 
-    // 4. Load existing attendance and draw the screen
+    // 4. Load data and draw
     await attLoadDay();
     if (typeof attRender === 'function') {
         attRender();
@@ -5321,7 +5319,7 @@ function editUser(id) {
                     const token = localStorage.getItem('access_token');
 
                     try {
-                        const res = await fetch(`http://127.0.0.1:8000/api/v1/users/${id}`, {
+                        const res = await fetch(`http://employee360-backend-v1.onrender.com/api/v1/users/${id}`, {
                             method: 'PATCH',
                             headers: {
                                 'Authorization': `Bearer ${token}`,
