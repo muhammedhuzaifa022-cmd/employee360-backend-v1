@@ -3515,21 +3515,22 @@ const em = $('#f2').value.trim();
 const d = $('#f3').value.trim();
 const r = $('#f4').value;
 const pw = $('#f5').value.trim();
-const st = $('#f6').value;
+const shiftVal = document.getElementById('f6').value; 
+
 if (!n || !em || !d) {
-toast('Name, email and department are required', 'bad');
-return false;
+    toast('Name, email and department are required', 'bad');
+    return false;
 }
+
 const token = localStorage.getItem('access_token');
-const shiftVal = document.getElementById('f6').value;
 try {
-const payload = {
-    full_name: n,
-    email: em,
-    department: d,
-    role: r,
-    custom_shift_start: document.getElementById('f6').value + ":00" // Morning 09:00 or Afternoon 13:00
-};
+    const payload = {
+        full_name: n,
+        email: em,
+        department: d,
+        role: r,
+        custom_shift_start: shiftVal + ":00" 
+    };
 if (pw) {
 payload.password = pw;
 }
