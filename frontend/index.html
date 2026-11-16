@@ -3050,14 +3050,41 @@ class="w-full text-center tracking-widest text-2xl font-bold bg-slate-50 border 
     </div>
     <!-- END OF HOLIDAY MODAL -->
 
-    
-<!-- Mark Attendance Modal -->
+<!-- Quick Present Modal -->
+<div id="quick-present-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded-2xl w-72 shadow-2xl flex flex-col items-center">
+        <h3 id="qp-name" class="font-bold text-lg mb-1 text-slate-800">Employee Name</h3>
+        <p id="qp-shift" class="text-xs text-slate-500 mb-4">Shift Start: 09:00 AM</p>
+        
+        <input type="text" id="qp-time" class="w-full border-2 border-indigo-200 focus:border-indigo-500 outline-none p-3 rounded-xl mb-4 text-center text-3xl font-extrabold tracking-widest text-indigo-700 bg-indigo-50" placeholder="913" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveQuickPresent();}">
+        
+        <div class="flex w-full gap-2">
+            <button onclick="document.getElementById('quick-present-modal').classList.add('hidden')" class="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-lg">Cancel</button>
+            <button onclick="saveQuickPresent()" class="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg shadow-sm">Save</button>
+        </div>
+    </div>
+</div>
+<!-- Quick Present Modal (Beautiful Popup) -->
+<div id="quick-present-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded-2xl w-72 shadow-2xl flex flex-col items-center">
+        <h3 id="qp-name" class="font-bold text-lg mb-1 text-slate-800">Employee Name</h3>
+        <p id="qp-shift" class="text-xs text-slate-500 mb-4">Shift Start: 09:00 AM</p>
+        
+        <input type="text" id="qp-time" class="w-full border-2 border-indigo-200 focus:border-indigo-500 outline-none p-3 rounded-xl mb-4 text-center text-3xl font-extrabold tracking-widest text-indigo-700 bg-indigo-50" placeholder="913" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveQuickPresent();}">
+        
+        <div class="flex w-full gap-2">
+            <button onclick="document.getElementById('quick-present-modal').classList.add('hidden')" class="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-lg">Cancel</button>
+            <button onclick="saveQuickPresent()" class="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg shadow-sm">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Attendance Modal (With Reset Button) -->
 <div id="att-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
     <div class="bg-white p-6 rounded-xl w-80 shadow-2xl">
-        <h3 id="att-m-name" class="font-bold text-lg mb-1">Employee Name</h3>
+        <h3 id="att-m-name" class="font-bold text-lg mb-1 text-slate-800">Employee Name</h3>
         <p id="att-m-meta" class="text-xs text-slate-500 mb-4">Shift Start: 09:00 AM</p>
         
-        <!-- Status Dropdown -->
         <label class="block text-xs font-bold text-slate-600 mb-1">Status</label>
         <select id="att-m-status" class="w-full border p-2 rounded mb-3 text-sm font-semibold">
             <option value="Auto">Auto (Calculate from time)</option>
@@ -3069,7 +3096,7 @@ class="w-full text-center tracking-widest text-2xl font-bold bg-slate-50 border 
         </select>
 
         <label class="block text-xs font-bold text-slate-600 mb-1">Arrival Time</label>
-        <div class="flex gap-2 mb-3">
+        <div class="flex gap-2 mb-4">
             <input type="text" id="att-m-in" class="w-full border p-2 rounded text-center text-xl font-bold" placeholder="e.g. 913">
             <select id="att-m-period" class="border p-2 rounded font-bold">
                 <option value="AM">AM</option>
@@ -3077,9 +3104,12 @@ class="w-full text-center tracking-widest text-2xl font-bold bg-slate-50 border 
             </select>
         </div>
         
-        <div class="flex justify-end gap-2">
-            <button onclick="document.getElementById('att-modal').classList.add('hidden')" class="px-3 py-2 text-slate-600 font-bold text-sm">Cancel</button>
-            <button onclick="saveAttRecord()" class="px-4 py-2 bg-indigo-600 text-white font-bold text-sm rounded-lg">Save</button>
+        <div class="flex justify-between items-center mt-6">
+            <button onclick="resetAttendance()" class="px-3 py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold text-xs rounded-lg">Reset / Clear</button>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('att-modal').classList.add('hidden')" class="px-3 py-2 text-slate-600 font-bold text-sm">Cancel</button>
+                <button onclick="saveAttRecord()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-lg">Save</button>
+            </div>
         </div>
     </div>
 </div>
@@ -4437,7 +4467,6 @@ async function attLoadDay() {
     attRender();
 }
 
-
 function attRender() {
     const listMorning = document.getElementById('list-morning');
     const listAfternoon = document.getElementById('list-afternoon');
@@ -4451,8 +4480,7 @@ function attRender() {
     listExceptions.innerHTML = '';
 
     if (!att.users || att.users.length === 0) {
-        listMorning.innerHTML =
-            '<div class="p-4 text-center text-slate-500">Loading employees...</div>';
+        listMorning.innerHTML = '<div class="p-4 text-center text-slate-500">Loading employees...</div>';
         return;
     }
 
@@ -4463,33 +4491,19 @@ function attRender() {
     let countExceptions = 0;
 
     att.users.forEach(emp => {
-
         // Check employee attendance record
-        const dayRecords =
-            (att.records && att.records[selectedDate])
-                ? att.records[selectedDate]
-                : {};
-
+        const dayRecords = (att.records && att.records[selectedDate]) ? att.records[selectedDate] : {};
         const rec = dayRecords[emp.id];
         const status = rec ? rec.status : 'Unmarked';
 
-        let badgeClass = "bg-slate-100 text-slate-600";
-
-        if (status === 'Present') {
-            badgeClass = "bg-emerald-100 text-emerald-700";
-        }
-
-        if (status === 'Late') {
-            badgeClass = "bg-amber-100 text-amber-700";
-        }
-
-        if (status === 'Absent') {
-            badgeClass = "bg-rose-100 text-rose-700";
-        }
-
-        if (status === 'Half-Day') {
-            badgeClass = "bg-rose-50 text-rose-600";
-        }
+        // Color codes for different statuses
+        let badgeClass = "bg-slate-100 text-slate-600"; // Unmarked
+        if (status === 'Present') badgeClass = "bg-emerald-100 text-emerald-700";
+        if (status === 'Late') badgeClass = "bg-amber-100 text-amber-700";
+        if (status === 'Absent') badgeClass = "bg-rose-100 text-rose-700";
+        if (status === 'Half-Day') badgeClass = "bg-rose-50 text-rose-600";
+        if (status === 'WFH') badgeClass = "bg-indigo-100 text-indigo-700";
+        if (status.includes('Leave')) badgeClass = "bg-yellow-100 text-yellow-800";
 
         const rowHTML = `
             <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50">
@@ -4509,10 +4523,18 @@ function attRender() {
                         ${status}
                     </span>
 
+                    <!-- BUTTON 1: QUICK PRESENT -->
+                    <button
+                        onclick="openQuickPresent('${emp.id}', '${emp.name}', '${emp.start}')"
+                        class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
+                        Present
+                    </button>
+
+                    <!-- BUTTON 2: EDIT / OTHER STATUSES -->
                     <button
                         onclick="openAttModal('${emp.id}', '${emp.name}', '${emp.start}')"
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
-                        Mark &rarr;
+                        class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
+                        Edit
                     </button>
                 </div>
             </div>
@@ -4521,11 +4543,9 @@ function attRender() {
         if (emp.shift === 'morning') {
             listMorning.innerHTML += rowHTML;
             countMorning++;
-
         } else if (emp.shift === 'afternoon') {
             listAfternoon.innerHTML += rowHTML;
             countAfternoon++;
-
         } else {
             listExceptions.innerHTML += rowHTML;
             countExceptions++;
@@ -4533,17 +4553,9 @@ function attRender() {
     });
 
     // Update badges
-    if (document.getElementById('badge-morning')) {
-        document.getElementById('badge-morning').innerText = countMorning;
-    }
-
-    if (document.getElementById('badge-afternoon')) {
-        document.getElementById('badge-afternoon').innerText = countAfternoon;
-    }
-
-    if (document.getElementById('badge-exceptions')) {
-        document.getElementById('badge-exceptions').innerText = countExceptions;
-    }
+    if (document.getElementById('badge-morning')) document.getElementById('badge-morning').innerText = countMorning;
+    if (document.getElementById('badge-afternoon')) document.getElementById('badge-afternoon').innerText = countAfternoon;
+    if (document.getElementById('badge-exceptions')) document.getElementById('badge-exceptions').innerText = countExceptions;
 }
 
 
