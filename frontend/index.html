@@ -5366,192 +5366,218 @@ if (status === 'Sick Leave') return { code: 'SL', label: 'Sick Leave', badge: 'b
 if (status === 'Absent') return { code: 'A', label: 'Absent', badge: 'bg-red-100 text-red-800', checkIn, checkOut };
 return { code: '-', label: status, badge: 'bg-slate-100 text-slate-500', checkIn, checkOut };
 }
-function renderMonthlyView(sync = true) {
-const monthVal = document.getElementById('monthly-picker').value;
-if (!monthVal) return;
-const [year, month] = monthVal.split('-').map(Number);
-// Automatically handles 28, 29 (leap year), 30, or 31 days for the selected month
-const daysInMonth = new Date(year, month, 0).getDate();
-// Pull real records for this month from the backend, then re-render once with the fresh data
-if (sync !== false) {
-const first = monthVal + '-01';
-const last = monthVal + '-' + String(daysInMonth).padStart(2, '0');
-attLoadRange(first, last).then(() => {
-if (activeTab === 'monthly' && document.getElementById('monthly-table-body')) renderMonthlyView(false);
-});
-}
-// Calculate exact Working Days for this specific month (Mon-Fri excluding Predefined Holidays)
-let monthWorkingDays = 0;
-const monthDaysMeta = [];
-for (let d = 1; d <= daysInMonth; d++) {
-const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-const dateObj = new Date(year, month - 1, d);
-const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-const dayInfo = getDayType(dateStr);
-if (!dayInfo.isHoliday) {
-monthWorkingDays++;
-}
-monthDaysMeta.push({ d, dateStr, dayName, dayInfo });
-}
-const thead = document.getElementById('monthly-table-header');
-const tbody = document.getElementById('monthly-table-body');
-if (activeMonthlySubTab === 'team') {
-// Header: Employee column sticky on left, followed by Dates 1..daysInMonth, plus Payable summary column
-let headerHtml = `<th class="py-3 px-4 sticky left-0 bg-slate-50 z-20 border-r border-slate-200 min-w-[180px]">Employee</th>`;
-monthDaysMeta.forEach(m => {
-const isHol = m.dayInfo.isHoliday;
-headerHtml += `
-<th title="${m.dayInfo.name || m.dayName}" class="py-2 px-1.5 text-center min-w-[34px] ${isHol ? 'bg-purple-50 text-purple-700' : ''}">
-<div class="text-[11px] font-bold">${m.d}</div>
-<div class="text-[9px] font-normal opacity-75">${m.dayName[0]}</div>
-</th>
-`;
-});
-headerHtml += `<th class="py-3 px-3 text-center bg-indigo-50 text-indigo-700 font-bold border-l border-slate-200">Payable</th>`;
-thead.innerHTML = headerHtml;
-let totalTeamPresent = 0, totalTeamLate = 0, totalTeamHalf = 0, totalTeamCasual = 0, totalTeamSick = 0, totalTeamPayable = 0;
-let rowsHtml = '';
-employees.forEach(emp => {
-let empPayable = 0;
-let rowCells = '';
-monthDaysMeta.forEach(m => {
-const cell = getMonthlyCellStatus(emp, m.dateStr, m.d, m.dayInfo);
-if (!m.dayInfo.isHoliday) {
-if (cell.code === 'P' || cell.code === 'WFH') { totalTeamPresent++; empPayable += 1; }
-else if (cell.code === 'L') { totalTeamLate++; empPayable += 1; }
-else if (cell.code === 'HD') { totalTeamHalf++; empPayable += 0.5; }
-else if (cell.code === 'CL') { totalTeamCasual++; empPayable += 1; }
-else if (cell.code === 'SL') { totalTeamSick++; empPayable += 1; }
-}
-rowCells += `
-<td title="${m.dateStr} (${m.dayName}): ${cell.label}" class="py-2 px-1 text-center border-r border-slate-50 ${m.dayInfo.isHoliday ? 'bg-purple-50/40' : ''}">
-<span class="inline-block w-6 py-0.5 rounded text-[10px] font-bold ${cell.badge}">${cell.code}</span>
-</td>
-`;
-});
-totalTeamPayable += empPayable;
-rowsHtml += `
-<tr class="hover:bg-slate-50 transition-colors">
-<td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap">
-<div class="text-xs font-bold">${emp.name}</div>
-<div class="text-[10px] text-slate-400 font-normal">${emp.id}</div>
-</td>
-${rowCells}
-<td class="py-2.5 px-3 text-center font-bold bg-indigo-50/40 text-indigo-700 border-l border-slate-200 text-xs">${empPayable}/${monthWorkingDays}</td>
-</tr>
-`;
-});
-tbody.innerHTML = rowsHtml;
-// Month-specific stat blocks: Working Days is strictly for that single month (e.g. 20 in Nov 2026, 22 in Dec 2026)
-const empCount = employees.length || 1;
-document.getElementById('m-working').innerText = monthWorkingDays;
-document.getElementById('m-present').innerText = totalTeamPresent;
-document.getElementById('m-late').innerText = totalTeamLate;
-document.getElementById('m-half').innerText = totalTeamHalf;
-document.getElementById('m-casual').innerText = totalTeamCasual;
-document.getElementById('m-sick').innerText = totalTeamSick;
-document.getElementById('m-payable').innerText = `${(totalTeamPayable / empCount).toFixed(1)} avg`;
-} else {
-// Employee Detail Sub-tab (Single Employee Payslip Breakdown)
-const selectedEmpId = document.getElementById('monthly-employee-select').value || employees[0].id;
-const emp = employees.find(e => e.id === selectedEmpId) || employees[0];
-thead.innerHTML = `
-<th class="py-3 px-4">Date</th>
-<th class="py-3 px-4">Day</th>
-<th class="py-3 px-4">Status</th>
-<th class="py-3 px-4">Check-in Time</th>
-<th class="py-3 px-4">Check-out Time</th>
-`;
-let empPresent = 0, empLate = 0, empHalf = 0, empCasual = 0, empSick = 0, empPayable = 0;
-let rowsHtml = '';
-monthDaysMeta.forEach(m => {
-const cell = getMonthlyCellStatus(emp, m.dateStr, m.d, m.dayInfo);
-if (!m.dayInfo.isHoliday) {
-if (cell.code === 'P' || cell.code === 'WFH') { empPresent++; empPayable += 1; }
-else if (cell.code === 'L') { empLate++; empPayable += 1; }
-else if (cell.code === 'HD') { empHalf++; empPayable += 0.5; }
-else if (cell.code === 'CL') { empCasual++; empPayable += 1; }
-else if (cell.code === 'SL') { empSick++; empPayable += 1; }
-}
-rowsHtml += `
-<tr class="hover:bg-slate-50 ${m.dayInfo.isHoliday ? 'bg-purple-50/30' : ''}">
-<td class="py-3 px-4 font-medium">${m.dateStr}</td>
-<td class="py-3 px-4 text-slate-500">${m.dayName}</td>
-<td class="py-3 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${cell.badge}">${cell.label}</span></td>
-<td class="py-3 px-4 text-slate-600">${fmt12(cell.checkIn)}</td>
-<td class="py-3 px-4 text-slate-600">${fmt12(cell.checkOut)}</td>
-</tr>
-`;
-});
-tbody.innerHTML = rowsHtml;
-document.getElementById('m-working').innerText = monthWorkingDays;
-document.getElementById('m-present').innerText = empPresent;
-document.getElementById('m-late').innerText = empLate;
-document.getElementById('m-half').innerText = empHalf;
-document.getElementById('m-casual').innerText = empCasual;
-document.getElementById('m-sick').innerText = empSick;
-document.getElementById('m-payable').innerText = empPayable;
-}
-}
+
 
 function renderYearlyView() {
-const searchQ = document.getElementById('yearly-search').value.toLowerCase().trim();
-const year = document.getElementById('yearly-year-select').value;
-const tbody = document.getElementById('yearly-table-body');
-let totWorking = 0, totPresent = 0, totLate = 0, totHalf = 0, totCasual = 0, totSick = 0, totPayable = 0;
-let rowsHtml = '';
-employees.forEach(emp => {
-if (searchQ && !emp.name.toLowerCase().includes(searchQ) && !emp.id.toLowerCase().includes(searchQ)) return;
-let monthPcts = [];
-let rowCells = '';
-let empPayable = 0;
-for (let m = 0; m < 12; m++) {
-const pct = 0;
-monthPcts.push(pct);
-empPayable += Math.round(22 * (pct / 100));
-let colorBg = "bg-emerald-100 text-emerald-800";
-if (pct < 92) colorBg = "bg-amber-100 text-amber-800";
-rowCells += `<td class="py-2.5 px-3 text-center"><span class="px-1.5 py-0.5 rounded font-semibold text-[11px] ${colorBg}">${pct}%</span></td>`;
-}
-totPayable += empPayable;
-const avg = Math.round(monthPcts.reduce((a, b) => a + b, 0) / 12);
-rowsHtml += `
-<tr class="hover:bg-slate-50">
-<td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 whitespace-nowrap">
-<div>${emp.name}</div>
-<div class="text-[10px] text-slate-400 font-normal">${emp.id}</div>
-</td>
-${rowCells}
-<td class="py-2.5 px-4 text-center font-bold bg-slate-50 text-indigo-700">${avg}%</td>
-</tr>
-`;
-});
-tbody.innerHTML = rowsHtml;
-// Calculate EXACT Working Days for the year
-let actualWorkingDays = 0;
-const daysInYear = (year % 4 === 0) ? 366 : 365;
-
-for (let i = 0; i < daysInYear; i++) {
-    const d = new Date(year, 0, i + 1);
-    // Fix timezone issue for date string
-    const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    
-    const isWeekend = (d.getDay() === 0 || d.getDay() === 6);
-    const isHoliday = globalHolidays.includes(dateStr) || (companyHolidays[year] && companyHolidays[year][dateStr]);
-    
-    // If it's NOT a weekend, AND it's NOT a holiday, it's a working day
-    if (!isWeekend && !isHoliday) {
-        actualWorkingDays++;
+    // SAFETY CHECK: Pull from att.users if employees is empty
+    if (typeof employees === 'undefined' || !employees || employees.length === 0) {
+        employees = att.users || [];
     }
+
+    const searchInput = document.getElementById('yearly-search');
+    const yearSelect = document.getElementById('yearly-year-select');
+    const tbody = document.getElementById('yearly-table-body');
+
+    if (!tbody || !yearSelect) return;
+
+    const searchQ = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const year = Number(yearSelect.value);
+
+    if (!year || !Number.isFinite(year)) return;
+
+    // Yearly statistics
+    let totPresent = 0;
+    let totLate = 0;
+    let totHalf = 0;
+    let totCasual = 0;
+    let totSick = 0;
+    let totPayable = 0;
+
+    let rowsHtml = '';
+
+    // Filter employees based on search
+    const filteredEmployees = employees.filter(emp => {
+        const empName = String(emp.name || '').toLowerCase();
+        const empId = String(emp.id || '').toLowerCase();
+
+        return !searchQ ||
+            empName.includes(searchQ) ||
+            empId.includes(searchQ);
+    });
+
+    filteredEmployees.forEach(emp => {
+
+        let monthPcts = [];
+        let rowCells = '';
+        let empPayable = 0;
+
+        // Loop through all 12 months
+        for (let m = 0; m < 12; m++) {
+
+            let monthWorkingDays = 0;
+            let monthPresentDays = 0;
+
+            const daysInMonth = new Date(year, m + 1, 0).getDate();
+
+            // Loop through every day of the month
+            for (let d = 1; d <= daysInMonth; d++) {
+
+                const dateStr =
+                    `${year}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+                const dayInfo = getDayType(dateStr);
+
+                // Skip weekends and holidays
+                if (dayInfo.isHoliday) continue;
+
+                // Skip days before employee joined
+                if (emp.joined && dateStr < emp.joined) continue;
+
+                monthWorkingDays++;
+
+                // Get attendance details using existing helper
+                const cell = getMonthlyCellStatus(emp, dateStr, d, dayInfo);
+
+                // Calculate yearly statistics
+                switch (cell.code) {
+
+                    case 'P':
+                    case 'WFH':
+                        totPresent++;
+                        monthPresentDays += 1;
+                        empPayable += 1;
+                        break;
+
+                    case 'L':
+                        totLate++;
+                        monthPresentDays += 1;
+                        empPayable += 1;
+                        break;
+
+                    case 'HD':
+                        totHalf++;
+                        monthPresentDays += 0.5;
+                        empPayable += 0.5;
+                        break;
+
+                    case 'CL':
+                        totCasual++;
+                        monthPresentDays += 1;
+                        empPayable += 1;
+                        break;
+
+                    case 'SL':
+                        totSick++;
+                        monthPresentDays += 1;
+                        empPayable += 1;
+                        break;
+                }
+            }
+
+            // Calculate monthly attendance percentage
+            const pct = monthWorkingDays > 0
+                ? Math.round((monthPresentDays / monthWorkingDays) * 100)
+                : 0;
+
+            monthPcts.push(pct);
+
+            // Monthly percentage color
+            let colorBg = "bg-emerald-100 text-emerald-800";
+
+            if (pct < 92) {
+                colorBg = "bg-amber-100 text-amber-800";
+            }
+
+            if (pct === 0) {
+                colorBg = "bg-slate-100 text-slate-400";
+            }
+
+            rowCells += `
+                <td class="py-2.5 px-3 text-center">
+                    <span class="px-1.5 py-0.5 rounded font-semibold text-[11px] ${colorBg}">
+                        ${pct === 0 ? '-' : pct + '%'}
+                    </span>
+                </td>
+            `;
+        }
+
+        // Add employee payable attendance to yearly total
+        totPayable += empPayable;
+
+        // Calculate average percentage using active months only
+        const activeMonths = monthPcts.filter(p => p > 0);
+
+        const avg = activeMonths.length > 0
+            ? Math.round(
+                activeMonths.reduce((a, b) => a + b, 0) / activeMonths.length
+            )
+            : 0;
+
+        // Employee row
+        rowsHtml += `
+            <tr class="hover:bg-slate-50">
+
+                <td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 whitespace-nowrap">
+                    <div>${emp.name || '-'}</div>
+                    <div class="text-[10px] text-slate-400 font-normal">
+                        ${emp.id || '-'}
+                    </div>
+                </td>
+
+                ${rowCells}
+
+                <td class="py-2.5 px-4 text-center font-bold bg-slate-50 text-indigo-700">
+                    ${avg === 0 ? '-' : avg + '%'}
+                </td>
+
+            </tr>
+        `;
+    });
+
+    // Display employee rows
+    tbody.innerHTML = rowsHtml || `
+        <tr>
+            <td colspan="14" class="text-center p-4 text-slate-500">
+                No employees found.
+            </td>
+        </tr>
+    `;
+
+    // Calculate actual working days in the selected year
+    let actualWorkingDays = 0;
+
+    const daysInYear = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+
+    for (let i = 0; i < daysInYear; i++) {
+
+        const d = new Date(year, 0, i + 1);
+
+        const dateStr =
+            d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0');
+
+        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+
+        const isHoliday =
+            globalHolidays.includes(dateStr) ||
+            (companyHolidays[year] && companyHolidays[year][dateStr]);
+
+        if (!isWeekend && !isHoliday) {
+            actualWorkingDays++;
+        }
+    }
+
+    // Update yearly dashboard statistics
+    document.getElementById('y-working').innerText = actualWorkingDays;
+    document.getElementById('y-present').innerText = totPresent;
+    document.getElementById('y-late').innerText = totLate;
+    document.getElementById('y-half').innerText = totHalf;
+    document.getElementById('y-casual').innerText = totCasual;
+    document.getElementById('y-sick').innerText = totSick;
+    document.getElementById('y-payable').innerText = totPayable;
 }
-document.getElementById('y-working').innerText = actualWorkingDays;
-document.getElementById('y-present').innerText = totPresent;
-document.getElementById('y-late').innerText = Math.round(totPresent * 0.08);
-document.getElementById('y-half').innerText = Math.round(totPresent * 0.04);
-document.getElementById('y-casual').innerText = 12;
-document.getElementById('y-sick').innerText = 10;
-document.getElementById('y-payable').innerText = totPayable;
-}
+
 function exportMonthlyExcel() {
 const monthVal = document.getElementById('monthly-picker').value;
 if (!monthVal) return;
