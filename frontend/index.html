@@ -6008,6 +6008,8 @@ function editUser(id) {
             <select id="e_shift" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm w-full mb-4">
                 <option value="09:00:00" ${shift === '09:00' || !shift ? 'selected' : ''}>Morning (9:00 AM)</option>
                 <option value="13:00:00" ${shift === '13:00' ? 'selected' : ''}>Afternoon (1:00 PM)</option>
+                <option value="10:00:00" ${shift === '10:00' ? 'selected' : ''}>Custom (10:00 AM)</option>
+                <option value="11:00:00" ${shift === '11:00' ? 'selected' : ''}>Custom (11:00 AM)</option>
             </select>
         `,
         actions: [
