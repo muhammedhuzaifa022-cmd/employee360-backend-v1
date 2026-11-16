@@ -2632,7 +2632,7 @@ return `
 <nav class="flex bg-slate-200/70 p-1 rounded-xl self-start md:self-auto shadow-sm">
 <button onclick="switchTab('daily')" id="tab-daily" class="px-5 py-2 text-sm font-semibold rounded-lg transition-all text-slate-700 bg-white shadow-sm">Daily</button>
 <button onclick="switchTab('monthly')" id="tab-monthly" class="px-5 py-2 text-sm font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900">Monthly Report</button>
-<button onclick="switchTab('yearly')" id="tab-yearly" class="px-5 py-2 text-sm font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900">Yearly Report</button>
+<button onclick="switchTab('yearly')" id="tab-yearly" class="px-5 py-2 text-sm font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900">Yearly TEST</button>
 </nav>
 </header>
 <!-- Status Legend Bar -->
@@ -6068,6 +6068,100 @@ async function resetAttendance() {
   showStandardToast('Cleared on screen only — server keeps the last saved mark.');
 }
 
+/* ===== YEARLY VIEW v2 — self-contained, overrides any older version ===== */
+async function renderYearlyView(sync = true) {
+  const tbody = document.getElementById('yearly-table-body');
+  const ySel = document.getElementById('yearly-year-select');
+  if (!tbody || !ySel) return;
+  const year = Number(ySel.value);
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') };
+
+  let list = (att.users && att.users.length) ? att.users : (employees || []);
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="14" class="p-4 text-center text-slate-500">Loading employees…</td></tr>';
+    try {
+      const r = await fetch(API + '/users?page_size=100', { headers: HDR });
+      const d = await r.json();
+      list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => {
+        let shift = 'morning', start = '09:00';
+        if (u.custom_shift_start) {
+          start = String(u.custom_shift_start).substring(0, 5);
+          shift = start.startsWith('13') ? 'afternoon' : (start.startsWith('09') ? 'morning' : 'exceptions');
+        }
+        return { id: String(u.id), name: u.full_name, shift, start };
+      });
+      att.users = list; employees = list;
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="14" class="p-4 text-center text-rose-600 font-semibold">Users API failed: ' + esc(e.message) + '</td></tr>';
+      return;
+    }
+  }
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="14" class="p-4 text-center text-slate-500">API returned no active employees.</td></tr>'; return; }
+
+  window._yc = window._yc || {};
+  const c = window._yc[year];
+  if (!c || Date.now() - c.at > 60000) {
+    let map = {};
+    try {
+      const r = await fetch(`${API}/attendance/team-attendance?start_date=${year}-01-01&end_date=${year}-12-31`, { headers: HDR });
+      const data = r.ok ? await r.json() : [];
+      (Array.isArray(data) ? data : []).forEach(it => { (map[it.date] = map[it.date] || {})[it.employee_id] = it; });
+      att.records = att.records || {};
+      Object.keys(map).forEach(d => att.records[d] = Object.assign(att.records[d] || {}, map[d]));
+    } catch (e) { console.warn('[YEARLY v2] attendance fetch failed', e); }
+    window._yc[year] = { at: Date.now(), map };
+  }
+  const recs = window._yc[year].map;
+  console.log('[YEARLY v2] employees:', list.length, '| days with records:', Object.keys(recs).length);
+
+  const q = (document.getElementById('yearly-search')?.value || '').toLowerCase().trim();
+  const rows = list.filter(e => !q || String(e.name).toLowerCase().includes(q) || String(e.id).includes(q));
+  const val = { 'Present': 1, 'Late': 1, 'WFH': 1, 'Casual Leave': 1, 'Sick Leave': 1, 'Half-Day': 0.5 };
+  let P = 0, L = 0, HD = 0, CL = 0, SL = 0, PAY = 0, html = '';
+  rows.forEach(emp => {
+    let cells = '', pay = 0; const pcts = [];
+    for (let m = 0; m < 12; m++) {
+      let work = 0, got = 0;
+      const dim = new Date(year, m + 1, 0).getDate();
+      for (let d = 1; d <= dim; d++) {
+        const ds = `${year}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        if (getDayType(ds).isHoliday) continue;
+        work++;
+        const rec = recs[ds] && recs[ds][emp.id];
+        const s = rec && rec.status;
+        if (s && val[s] !== undefined) {
+          got += val[s]; pay += val[s];
+          if (s === 'Present' || s === 'WFH') P++; else if (s === 'Late') L++;
+          else if (s === 'Half-Day') HD++; else if (s === 'Casual Leave') CL++; else SL++;
+        }
+      }
+      const pct = work ? Math.round(got / work * 100) : 0;
+      pcts.push(pct);
+      const bg = pct === 0 ? 'bg-slate-100 text-slate-400' : pct < 92 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
+      cells += `<td class="py-2.5 px-3 text-center"><span class="px-1.5 py-0.5 rounded font-semibold text-[11px] ${bg}">${pct ? pct + '%' : '-'}</span></td>`;
+    }
+    PAY += pay;
+    const act = pcts.filter(p => p > 0);
+    const avg = act.length ? Math.round(act.reduce((a, b) => a + b, 0) / act.length) : 0;
+    html += `<tr class="hover:bg-slate-50"><td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 whitespace-nowrap"><div>${esc(emp.name)}</div><div class="text-[10px] text-slate-400 font-normal">${esc(emp.id)}</div></td>${cells}<td class="py-2.5 px-4 text-center font-bold bg-slate-50 text-indigo-700">${avg ? avg + '%' : '-'}</td></tr>`;
+  });
+  tbody.innerHTML = html || '<tr><td colspan="14" class="p-4 text-center text-slate-500">No employees match your search.</td></tr>';
+
+  let work = 0; const n = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+  for (let i = 0; i < n; i++) {
+    const dt = new Date(year, 0, i + 1);
+    const ds = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    if (!getDayType(ds).isHoliday) work++;
+  }
+  document.getElementById('y-working').innerText = work;
+  document.getElementById('y-present').innerText = P;
+  document.getElementById('y-late').innerText = L;
+  document.getElementById('y-half').innerText = HD;
+  document.getElementById('y-casual').innerText = CL;
+  document.getElementById('y-sick').innerText = SL;
+  document.getElementById('y-payable').innerText = PAY;
+}
 
 load();
 render();
