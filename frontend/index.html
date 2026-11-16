@@ -4300,54 +4300,248 @@ const att = {
 };
 
 
-// ===========================================================
-async function attInit() {
-    console.log("1. attInit started");
-    if (!document.getElementById('list-morning')) {
-        console.log("ERROR: HTML elements missing!");
-        return;
-    }
 
+// ================= ATTENDANCE LOGIC =================
+
+async function attInit() {
+    if (!document.getElementById('list-morning')) return;
+
+    // 1. Set Date
+    const todayStr = new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Kolkata'
+    });
+
+    att.date = todayStr;
+    document.getElementById('daily-date-picker').value = todayStr;
+
+    // 2. Fetch Users
     const token = localStorage.getItem('access_token');
-    
+
     try {
-        console.log("2. Fetching users...");
-        const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
+        const res = await fetch(
+            'https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100',
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }
+        );
+
         if (res.ok) {
             const data = await res.json();
-            console.log("3. Data received. Total users:", data.items.length);
-            
+
             att.users = data.items
                 .filter(u => u.is_active && u.role !== 'admin')
                 .map(u => {
                     let shiftType = 'morning';
                     let startTime = '09:00';
-                    
+
                     if (u.custom_shift_start) {
                         startTime = u.custom_shift_start;
+
                         if (startTime.startsWith('13')) {
-                            shiftType = 'afternoon'; 
+                            shiftType = 'afternoon';
                         } else if (!startTime.startsWith('09')) {
-                            shiftType = 'exceptions'; 
+                            shiftType = 'exceptions';
                         }
                     }
-                    return { id: u.id.toString(), name: u.full_name, shift: shiftType, start: startTime };
+
+                    return {
+                        id: u.id.toString(),
+                        name: u.full_name,
+                        shift: shiftType,
+                        start: startTime
+                    };
                 });
-                
-            console.log("4. Mapped users for UI:", att.users.length);
-        } else {
-            console.log("ERROR: Failed to fetch users. Status:", res.status);
         }
-    } catch(e) { 
-        console.log("FETCH ERROR:", e); 
+    } catch (e) {
+        console.error("Fetch users error:", e);
     }
 
-    console.log("5. Calling attRender...");
-    attRender(); 
+    // 3. Fetch Attendance & Draw
+    await attLoadDay();
 }
+
+
+async function attLoadDay() {
+    const dateStr = document.getElementById('daily-date-picker').value || att.date;
+
+    if (!dateStr) return;
+
+    const token = localStorage.getItem('access_token');
+
+    try {
+        // Fetch Attendance
+        const res = await fetch(
+            `https://employee360-backend-v1.onrender.com/api/v1/attendance/team-attendance?start_date=${dateStr}&end_date=${dateStr}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }
+        );
+
+        if (res.ok) {
+            const data = await res.json();
+
+            att.records = {};
+
+            data.forEach(item => {
+                if (!att.records[item.date]) {
+                    att.records[item.date] = {};
+                }
+
+                att.records[item.date][item.employee_id] = item;
+            });
+        }
+    } catch (e) {
+        console.error(
+            "Fetch attendance error (This is normal if no data for this date):",
+            e
+        );
+    }
+
+    // Always render after fetching
+    attRender();
+}
+
+
+function attRender() {
+    const listMorning = document.getElementById('list-morning');
+    const listAfternoon = document.getElementById('list-afternoon');
+    const listExceptions = document.getElementById('list-exceptions');
+
+    if (!listMorning) return;
+
+    // Clear the lists
+    listMorning.innerHTML = '';
+    listAfternoon.innerHTML = '';
+    listExceptions.innerHTML = '';
+
+    if (!att.users || att.users.length === 0) {
+        listMorning.innerHTML =
+            '<div class="p-4 text-center text-slate-500">Loading employees...</div>';
+        return;
+    }
+
+    const selectedDate = document.getElementById('daily-date-picker').value;
+
+    let countMorning = 0;
+    let countAfternoon = 0;
+    let countExceptions = 0;
+
+    att.users.forEach(emp => {
+
+        // Check employee attendance record
+        const dayRecords =
+            (att.records && att.records[selectedDate])
+                ? att.records[selectedDate]
+                : {};
+
+        const rec = dayRecords[emp.id];
+        const status = rec ? rec.status : 'Unmarked';
+
+        let badgeClass = "bg-slate-100 text-slate-600";
+
+        if (status === 'Present') {
+            badgeClass = "bg-emerald-100 text-emerald-700";
+        }
+
+        if (status === 'Late') {
+            badgeClass = "bg-amber-100 text-amber-700";
+        }
+
+        if (status === 'Absent') {
+            badgeClass = "bg-rose-100 text-rose-700";
+        }
+
+        if (status === 'Half-Day') {
+            badgeClass = "bg-rose-50 text-rose-600";
+        }
+
+        const rowHTML = `
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                        ${emp.name.substring(0, 2).toUpperCase()}
+                    </div>
+
+                    <div>
+                        <div class="font-bold text-sm text-slate-800">${emp.name}</div>
+                        <div class="text-xs text-slate-500">Shift Start: ${emp.start}</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <span class="px-2 py-1 text-xs font-bold rounded ${badgeClass}">
+                        ${status}
+                    </span>
+
+                    <button
+                        onclick="openAttModal('${emp.id}', '${emp.name}', '${emp.start}')"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
+                        Mark &rarr;
+                    </button>
+                </div>
+            </div>
+        `;
+
+        if (emp.shift === 'morning') {
+            listMorning.innerHTML += rowHTML;
+            countMorning++;
+
+        } else if (emp.shift === 'afternoon') {
+            listAfternoon.innerHTML += rowHTML;
+            countAfternoon++;
+
+        } else {
+            listExceptions.innerHTML += rowHTML;
+            countExceptions++;
+        }
+    });
+
+    // Update badges
+    if (document.getElementById('badge-morning')) {
+        document.getElementById('badge-morning').innerText = countMorning;
+    }
+
+    if (document.getElementById('badge-afternoon')) {
+        document.getElementById('badge-afternoon').innerText = countAfternoon;
+    }
+
+    if (document.getElementById('badge-exceptions')) {
+        document.getElementById('badge-exceptions').innerText = countExceptions;
+    }
+}
+
+
+// ================= DATE CONTROLS =================
+
+function handleDateChange(val) {
+    if (!val) return;
+
+    att.date = val;
+    attLoadDay();
+}
+
+
+function navigateDate(days) {
+    const d = new Date(
+        document.getElementById('daily-date-picker').value || att.date
+    );
+
+    d.setDate(d.getDate() + days);
+
+    const newDate = d.toLocaleDateString('en-CA');
+
+    document.getElementById('daily-date-picker').value = newDate;
+
+    att.date = newDate;
+
+    attLoadDay();
+}
+
+
 
 function attRender() {
     const listMorning = document.getElementById('list-morning');
