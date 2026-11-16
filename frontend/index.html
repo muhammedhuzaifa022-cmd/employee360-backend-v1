@@ -6300,5 +6300,191 @@ async function renderYearlyView() {
 load();
 render();
 </script>
+
+<script>
+/* ===== YEARLY REPORT — self-installing module (isolated, cannot break the main script) ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('access_token') });
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const VAL = { 'Present': 1, 'Late': 1, 'WFH': 1, 'Casual Leave': 1, 'Sick Leave': 1, 'Half-Day': 0.5 };
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const cache = {}, flying = {};
+  let usersP = null;
+
+  const isOff = ds => {
+    const w = new Date(ds + 'T00:00:00').getDay();
+    if (w === 0 || w === 6) return true;
+    try { if (globalHolidays.includes(ds)) return true; } catch (e) {}
+    try { const y = ds.slice(0, 4); if (companyHolidays[y] && companyHolidays[y][ds]) return true; } catch (e) {}
+    return false;
+  };
+  const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const fmtPay = v => (v % 1 ? v.toFixed(1) : String(v));
+
+  function shell() {
+    const sec = document.getElementById('view-yearly');
+    if (!sec) return null;
+    const table = sec.querySelector('table');
+    if (!table) return null;
+    let tbody = table.querySelector('tbody');
+    if (!tbody) { tbody = document.createElement('tbody'); table.appendChild(tbody); }
+    let note = document.getElementById('yearly-status-note');
+    if (!note) {
+      note = document.createElement('div');
+      note.id = 'yearly-status-note';
+      note.className = 'text-[11px] font-semibold text-slate-500 px-1';
+      const card = table.closest('.bg-white');
+      if (card && card.parentNode) card.parentNode.insertBefore(note, card);
+    }
+    const sel = sec.querySelector('select');
+    const inp = sec.querySelector('input[type="text"]');
+    return { sec, tbody, note, year: Number(sel && sel.value) || new Date().getFullYear(), q: ((inp && inp.value) || '').toLowerCase().trim() };
+  }
+
+  function getUsers() {
+    try { if (typeof att !== 'undefined' && att.users && att.users.length) return Promise.resolve(att.users); } catch (e) {}
+    try { if (typeof employees !== 'undefined' && employees && employees.length) return Promise.resolve(employees); } catch (e) {}
+    if (usersP) return usersP;
+    usersP = fetch(API + '/users?page_size=100', { headers: HDR() })
+      .then(r => { if (!r.ok) throw new Error('Users API returned ' + r.status); return r.json(); })
+      .then(d => (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => ({ id: String(u.id), name: u.full_name })))
+      .catch(e => { usersP = null; throw e; });
+    return usersP;
+  }
+
+  function getYear(year) {
+    const c = cache[year];
+    if (c && Date.now() - c.at < 60000) return Promise.resolve(c.map);
+    if (flying[year]) return flying[year];
+    flying[year] = fetch(`${API}/attendance/team-attendance?start_date=${year}-01-01&end_date=${year}-12-31`, { headers: HDR() })
+      .then(r => (r.ok ? r.json() : []))
+      .then(rows => {
+        const map = {};
+        (Array.isArray(rows) ? rows : []).forEach(it => { (map[it.date] = map[it.date] || {})[String(it.employee_id)] = it; });
+        cache[year] = { at: Date.now(), map };
+        return map;
+      })
+      .catch(() => { const map = {}; cache[year] = { at: Date.now(), map }; return map; })
+      .finally(() => { delete flying[year]; });
+    return flying[year];
+  }
+
+  function computeYear(list, recs, year) {
+    const months = [];
+    for (let m = 0; m < 12; m++) {
+      const dim = new Date(year, m + 1, 0).getDate(), days = [];
+      for (let d = 1; d <= dim; d++) {
+        const ds = `${year}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        if (!isOff(ds)) days.push(ds);
+      }
+      months.push(days);
+    }
+    const totals = { present: 0, late: 0, half: 0, casual: 0, sick: 0, payable: 0 };
+    const rows = list.map(emp => {
+      const pcts = []; let payable = 0;
+      months.forEach(days => {
+        let got = 0;
+        days.forEach(ds => {
+          const rec = recs[ds] && recs[ds][String(emp.id)];
+          const st = rec && rec.status;
+          if (st && VAL[st] !== undefined) {
+            got += VAL[st]; payable += VAL[st];
+            if (st === 'Present' || st === 'WFH') totals.present++;
+            else if (st === 'Late') totals.late++;
+            else if (st === 'Half-Day') totals.half++;
+            else if (st === 'Casual Leave') totals.casual++;
+            else totals.sick++;
+          }
+        });
+        pcts.push(days.length ? Math.round(got / days.length * 100) : 0);
+      });
+      const act = pcts.filter(p => p > 0);
+      const avg = act.length ? Math.round(act.reduce((a, b) => a + b, 0) / act.length) : 0;
+      totals.payable += payable;
+      return { emp, pcts, avg, payable };
+    });
+    return { rows, totals, working: months.reduce((a, d) => a + d.length, 0) };
+  }
+
+  const badge = p => p === 0 ? 'bg-slate-100 text-slate-400'
+    : p >= 92 ? 'bg-emerald-100 text-emerald-800'
+    : p >= 75 ? 'bg-amber-100 text-amber-800'
+    : 'bg-rose-100 text-rose-700';
+
+  async function render(filterOnly) {
+    const s = shell();
+    if (!s) return;
+    try {
+      if (!filterOnly) s.tbody.innerHTML = '<tr><td colspan="14" class="p-6 text-center text-slate-400 text-sm">Loading yearly report…</td></tr>';
+      const all = await getUsers();
+      const recs = await getYear(s.year);
+      const list = all.filter(e => !s.q || String(e.name || '').toLowerCase().includes(s.q) || String(e.id).includes(s.q));
+      const { rows, totals, working } = computeYear(list, recs, s.year);
+      const now = new Date(), curM = now.getFullYear() === s.year ? now.getMonth() : -1;
+
+      s.tbody.innerHTML = rows.length ? rows.map(r => `
+        <tr class="hover:bg-slate-50 transition-colors">
+          <td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 whitespace-nowrap border-r border-slate-100">
+            <div>${esc(r.emp.name || '-')}</div>
+            <div class="text-[10px] text-slate-400 font-normal">#${esc(r.emp.id)}</div>
+          </td>
+          ${r.pcts.map((p, i) => `<td class="py-2.5 px-3 text-center ${i === curM ? 'bg-indigo-50/50' : ''}"><span class="px-1.5 py-0.5 rounded font-semibold text-[11px] ${badge(p)}">${p ? p + '%' : '-'}</span></td>`).join('')}
+          <td class="py-2.5 px-4 text-center font-bold bg-slate-50 text-indigo-700">${r.avg ? r.avg + '%' : '-'}</td>
+        </tr>`).join('')
+        : '<tr><td colspan="14" class="p-6 text-center text-slate-500 text-sm">No employees match your search.</td></tr>';
+
+      setStat('y-working', working);
+      setStat('y-present', totals.present);
+      setStat('y-late', totals.late);
+      setStat('y-half', totals.half);
+      setStat('y-casual', totals.casual);
+      setStat('y-sick', totals.sick);
+      setStat('y-payable', fmtPay(totals.payable));
+      const marked = Object.keys(recs).length;
+      s.note.textContent = `${rows.length} employee${rows.length === 1 ? '' : 's'} · ${marked} day${marked === 1 ? '' : 's'} with records in ${s.year} · ${working} working days`;
+      s.note.className = 'text-[11px] font-semibold px-1 ' + (marked ? 'text-slate-500' : 'text-amber-600');
+      console.log('[YEARLY MODULE] ok ·', rows.length, 'employees ·', marked, 'days');
+    } catch (err) {
+      s.tbody.innerHTML = `<tr><td colspan="14" class="p-6 text-center text-rose-600 font-bold text-sm">Could not load yearly report: ${esc(err.message)}</td></tr>`;
+      s.note.textContent = '';
+      console.error('[YEARLY MODULE]', err);
+    }
+  }
+
+  window.renderYearlyView = render;
+  window.exportYearlyExcel = async function () {
+    const s = shell();
+    if (!s || typeof XLSX === 'undefined') return;
+    const all = await getUsers(), recs = await getYear(s.year);
+    const { rows, working } = computeYear(all, recs, s.year);
+    const data = [
+      [`Employee360 — Yearly Attendance Report (${s.year})`],
+      [`${working} working days · generated ${new Date().toLocaleString()}`], [],
+      ['ID', 'Name', ...MONTHS, 'Yearly Avg', 'Payable Days']
+    ];
+    rows.forEach(r => data.push([r.emp.id, r.emp.name, ...r.pcts.map(p => p ? p + '%' : '-'), r.avg ? r.avg + '%' : '-', r.payable]));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Yearly Report');
+    XLSX.writeFile(wb, `Yearly_Attendance_Report_${s.year}.xlsx`);
+  };
+
+  document.addEventListener('click', e => {
+    const b = e.target && e.target.closest && e.target.closest('#tab-yearly');
+    if (b) setTimeout(() => render(false), 50);
+  }, true);
+  document.addEventListener('change', e => { if (e.target && e.target.id === 'yearly-year-select') render(false); }, true);
+  document.addEventListener('input', e => { if (e.target && e.target.id === 'yearly-search') render(true); }, true);
+  setTimeout(() => { const s = document.getElementById('view-yearly'); if (s && !s.classList.contains('hidden')) render(false); }, 400);
+})();
+</script>
+
+
+
 </body>
 </html>
+
+
+
+
+
