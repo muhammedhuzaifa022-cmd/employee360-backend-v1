@@ -5,7 +5,7 @@
   · attendanceView() fully replaced with the new Attendance UI (newfrontend.txt).
   · All old attendance JS removed (markAttendance / loadAttendance duplicates, renderAttDaily, att* legacy block).
   · New attendance JS inserted above BOOT. attInit() uses global S.users (NO fake users, NO user API fetch).
-  · Every save posts to https://http://127.0.0.1:8000/api/v1/attendance/mark with Authorization: Bearer <access_token>.
+  · Every save posts to https://https://employee360-backend-v1.onrender.com/api/v1/attendance/mark with Authorization: Bearer <access_token>.
   · Existing day/month records are read from /api/v1/attendance/team-attendance so the UI shows real DB data.
   · Router: view === 'attendance' -> setTimeout(attInit, 100). Old DOMContentLoaded attInit trigger removed.
   · Collision fix: attendance openModal/closeModal renamed to openEmployeeModal/closeEmployeeModal (app-wide modal kept).
@@ -1833,7 +1833,7 @@ body { font-family: 'Inter', sans-serif; }
 function downloadReportsCSV() {
 // Fetch reports using the authentication token
 const token = localStorage.getItem('access_token');
-fetch('https://http://127.0.0.1:8000/api/v1/reports/my-reports', {
+fetch('https://https://employee360-backend-v1.onrender.com/api/v1/reports/my-reports', {
 headers: {
 'Authorization': `Bearer ${token}`
 }
@@ -1897,7 +1897,7 @@ if (window.myAttChart) window.myAttChart.destroy();
 let present = 0, absent = 0, late = 0, half = 0;
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/attendance/summary', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/attendance/summary', {
 headers: {
 'Authorization': `Bearer ${token}`
 }
@@ -1943,12 +1943,12 @@ const headers = {
 };
 try {
 // 1. Fetch Current User
-const meRes = await fetch('https://http://127.0.0.1:8000/api/v1/auth/me', { headers });
+const meRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/auth/me', { headers });
 if (!meRes.ok) throw new Error("Session expired");
 const meData = await meRes.json();
 S.me = meData.id.toString();
 // 2. Fetch Users
-const usersRes = await fetch('https://http://127.0.0.1:8000/api/v1/users?page_size=100', { headers });
+const usersRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', { headers });
 if (!usersRes.ok) throw new Error("Failed to fetch users");
 const usersData = await usersRes.json();
 S.users = usersData.items.map(u => ({
@@ -1966,7 +1966,7 @@ shift_start: u.shift_start || null,
 custom_shift_start: u.custom_shift_start 
 }));
 // 3. Fetch Projects
-const projRes = await fetch('https://http://127.0.0.1:8000/api/v1/projects', { headers });
+const projRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/projects', { headers });
 if (!projRes.ok) throw new Error("Failed to fetch projects");
 const projData = await projRes.json();
 S.projects = projData.items.map(p => ({
@@ -1980,7 +1980,7 @@ end: p.end_date,
 prio: p.priority
 }));
 // 4. Fetch Tasks
-const tasksRes = await fetch('https://http://127.0.0.1:8000/api/v1/tasks?page_size=100', { headers });
+const tasksRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/tasks?page_size=100', { headers });
 if (!tasksRes.ok) throw new Error("Failed to fetch tasks");
 const tasksData = await tasksRes.json();
 S.tasks = tasksData.items.map(t => ({
@@ -2001,7 +2001,7 @@ done: t.completed_on,
 rating: t.rating
 }));
 // 5. Fetch Notifications
-const notesRes = await fetch('https://http://127.0.0.1:8000/api/v1/notifications?page_size=100', { headers });
+const notesRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/notifications?page_size=100', { headers });
 if (!notesRes.ok) throw new Error("Failed to fetch notifications");
 const notesData = await notesRes.json();
 S.notes = notesData.items.map(n => ({
@@ -2014,13 +2014,13 @@ to: S.me
 // 6. Fetch Leaves
 let allLeaves = [];
 // First, get my own leaves
-const myLeavesRes = await fetch('https://http://127.0.0.1:8000/api/v1/leave/my-leaves', { headers });
+const myLeavesRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/leave/my-leaves', { headers });
 if (myLeavesRes.ok) {
 allLeaves = await myLeavesRes.json();
 }
 // If I am an Admin or Team Lead, ALSO get the team's pending queue
 if (meData.role === 'admin' || meData.role === 'teamlead') {
-const queueRes = await fetch('https://http://127.0.0.1:8000/api/v1/leave/queue', { headers });
+const queueRes = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/leave/queue', { headers });
 if (queueRes.ok) {
 const queueData = await queueRes.json();
 // Add team leaves to the list
@@ -2339,7 +2339,7 @@ try {
 const formData = new URLSearchParams();
 formData.append('username', email);
 formData.append('password', password);
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/auth/token', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/auth/token', {
 method: 'POST',
 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
 body: formData
@@ -2562,7 +2562,7 @@ const content = document.getElementById('rep_content').value.trim();
 if(!content || content.length < 5) return toast('Please write a bit more', 'bad');
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/reports/submit', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/reports/submit', {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -2584,7 +2584,7 @@ alert("Error: " + err.message);
 async function loadReports(){
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/reports/my-reports', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/reports/my-reports', {
 headers: {
 'Authorization': `Bearer ${token}`
 }
@@ -3249,7 +3249,7 @@ return false;
 }
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/leave/apply', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/leave/apply', {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3392,7 +3392,7 @@ const len = diff(t.start, t.due);
 const newDue = addD(d, len);
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${taskId}/reschedule`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${taskId}/reschedule`, {
 method: 'PUT',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3534,7 +3534,7 @@ try {
 if (pw) {
 payload.password = pw;
 }
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/users', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/users', {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3641,7 +3641,7 @@ ${n.read ? '' : '<span style="width:8px;height:8px;border-radius:50%;background:
 async function markAll() {
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/notifications/read-all', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/notifications/read-all', {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`
@@ -3710,7 +3710,7 @@ async function setS(id) {
 const v = $('#ns').value;
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/status`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/status`, {
 method: 'PATCH',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3732,7 +3732,7 @@ alert("Error updating status: " + err.message);
 async function submitT(id) {
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/submit`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/submit`, {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3755,7 +3755,7 @@ const t = T(id);
 if (t.status === val) return;
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/status`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/status`, {
 method: 'PATCH',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3809,7 +3809,7 @@ return false;
 const rating = slider.value;
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/approve`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/approve`, {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3857,7 +3857,7 @@ return false;
 }
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/request-changes`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/request-changes`, {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3906,7 +3906,7 @@ return false;
 }
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/deadline`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/deadline`, {
 method: 'PUT',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -3939,7 +3939,7 @@ const ok = await confirmAsk(
 if (ok) {
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}`, {
 method: 'DELETE',
 headers: {
 'Authorization': `Bearer ${token}`
@@ -3960,7 +3960,7 @@ const v = document.getElementById('cm').value.trim();
 if (!v) return;
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch(`https://http://127.0.0.1:8000/api/v1/tasks/${id}/comments`, {
+const res = await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/tasks/${id}/comments`, {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -4022,7 +4022,7 @@ const h = parseInt($('#f7').value) || 0;
 const token = localStorage.getItem('access_token');
 try {
 // Send the data to FastAPI!
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/tasks', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/tasks', {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -4099,7 +4099,7 @@ const members = [...$('#f4').selectedOptions].map(o => parseInt(o.value));
 const prio = $('#f7').value;
 const token = localStorage.getItem('access_token');
 try {
-const res = await fetch('https://http://127.0.0.1:8000/api/v1/projects', {
+const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/projects', {
 method: 'POST',
 headers: {
 'Authorization': `Bearer ${token}`,
@@ -4167,8 +4167,8 @@ let customShiftTargetEmpId = null;
 let undoSnapshot = null;
 let undoTimer = null;
 let undoCommitTimer = null;
-const ATT_MARK_URL = 'https://http://127.0.0.1:8000/api/v1/attendance/mark';
-const ATT_TEAM_URL = 'https://http://127.0.0.1:8000/api/v1/attendance/team-attendance';
+const ATT_MARK_URL = 'https://https://employee360-backend-v1.onrender.com/api/v1/attendance/mark';
+const ATT_TEAM_URL = 'https://https://employee360-backend-v1.onrender.com/api/v1/attendance/team-attendance';
 function attAuthHeaders(json = true) {
 const h = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') };
 if (json) h['Content-Type'] = 'application/json';
@@ -4265,9 +4265,9 @@ console.error('Could not load attendance:', e);
 function attLoadDay() { return attLoadRange(currentDate, currentDate); }
 // ================= GLOBAL ATTENDANCE STATE =================
 const ATT_API = { 
-    users: 'https://http://127.0.0.1:8000/api/v1/users', 
-    mark: 'https://http://127.0.0.1:8000/api/v1/attendance/mark', 
-    day: 'https://http://127.0.0.1:8000/api/v1/attendance' 
+    users: 'https://https://employee360-backend-v1.onrender.com/api/v1/users', 
+    mark: 'https://https://employee360-backend-v1.onrender.com/api/v1/attendance/mark', 
+    day: 'https://https://employee360-backend-v1.onrender.com/api/v1/attendance' 
 };
 
 const att = { 
@@ -4296,7 +4296,7 @@ async function attInit() {
     
     try {
         console.log("2. Fetching users...");
-        const res = await fetch('https://http://127.0.0.1:8000/api/v1/users?page_size=100', {
+        const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/users?page_size=100', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -4993,7 +4993,7 @@ async function loadHolidays() {
     if (!list) return;
 
     try {
-        const res = await fetch('https://http://127.0.0.1:8000/api/v1/holidays/', {
+        const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/holidays/', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -5032,7 +5032,7 @@ async function addNewHoliday() {
 
     const token = localStorage.getItem('access_token');
     try {
-        const res = await fetch('https://http://127.0.0.1:8000/api/v1/holidays/', {
+        const res = await fetch('https://https://employee360-backend-v1.onrender.com/api/v1/holidays/', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ date: date, name: name })
@@ -5053,7 +5053,7 @@ async function deleteHoliday(id) {
     
     const token = localStorage.getItem('access_token');
     try {
-        await fetch(`https://http://127.0.0.1:8000/api/v1/holidays/${id}`, {
+        await fetch(`https://https://employee360-backend-v1.onrender.com/api/v1/holidays/${id}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -5378,7 +5378,7 @@ function editUser(id) {
                     const newShift = document.getElementById('e_shift').value;
                     const token = localStorage.getItem('access_token');
 
-                    const url = `https://http://127.0.0.1:8000/api/v1/users/${id}`;
+                    const url = `https://https://employee360-backend-v1.onrender.com/api/v1/users/${id}`;
 
                     console.log("Sending PATCH to:", url);
 
