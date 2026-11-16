@@ -4240,6 +4240,7 @@ if (results.every(Boolean)) showStandardToast('Attendance synced to server.');
 }
 // Load real records for a date range from the backend and merge into attendanceData
 
+
 async function attLoadRange(startDate, endDate) {
     const token = localStorage.getItem('access_token');
     att.records = {}; // Reset records
@@ -4275,6 +4276,7 @@ async function attLoadRange(startDate, endDate) {
 
     attRender(); // Always redraw, even if no data was found
 }
+
 
 function attLoadDay() { return attLoadRange(currentDate, currentDate); }
 // ================= GLOBAL ATTENDANCE STATE =================
@@ -4346,7 +4348,6 @@ async function attInit() {
     console.log("5. Calling attRender...");
     attRender(); 
 }
-
 
 function attRender() {
     const listMorning = document.getElementById('list-morning');
