@@ -4239,29 +4239,43 @@ return attPushRecord(emp, rec);
 if (results.every(Boolean)) showStandardToast('Attendance synced to server.');
 }
 // Load real records for a date range from the backend and merge into attendanceData
+
 async function attLoadRange(startDate, endDate) {
-try {
-const res = await fetch(`${ATT_TEAM_URL}?start_date=${startDate}&end_date=${endDate}`, { headers: attAuthHeaders(false) });
-if (!res.ok) return;
-const data = await res.json();
-const list = Array.isArray(data) ? data : (data.items || []);
-list.forEach(a => {
-const dateStr = String(a.date).substring(0, 10);
-const empId = String(a.employee_id);
-if (!attendanceData[dateStr]) attendanceData[dateStr] = {};
-attendanceData[dateStr][empId] = {
-status: a.status || 'Unmarked',
-checkIn: a.check_in ? String(a.check_in).substring(0, 5) : '-',
-checkOut: a.check_out ? String(a.check_out).substring(0, 5) : '-',
-markedAt: a.marked_at ? new Date(a.marked_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '-',
-leaveType: approvedLeaveTypeOn(empId, dateStr),
-overrideWorking: getDayType(dateStr).isHoliday && !['Unmarked', 'Holiday'].includes(a.status)
-};
-});
-} catch (e) {
-console.error('Could not load attendance:', e);
+    const token = localStorage.getItem('access_token');
+    att.records = {}; // Reset records
+
+    try {
+        const res = await fetch(
+            `https://employee360-backend-v1.onrender.com/api/v1/attendance/team-attendance?start_date=${startDate}&end_date=${endDate}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }
+        );
+
+        if (res.ok) {
+            const data = await res.json();
+
+            // Save the records
+            data.forEach(item => {
+                if (!att.records[item.date]) {
+                    att.records[item.date] = {};
+                }
+
+                att.records[item.date][item.employee_id] = {
+                    status: item.status,
+                    checkIn: item.check_in
+                };
+            });
+        }
+    } catch (e) {
+        console.log("No attendance data for this date.", e);
+    }
+
+    attRender(); // Always redraw, even if no data was found
 }
-}
+
 function attLoadDay() { return attLoadRange(currentDate, currentDate); }
 // ================= GLOBAL ATTENDANCE STATE =================
 const ATT_API = { 
@@ -4345,19 +4359,30 @@ function attRender() {
     listAfternoon.innerHTML = '';
     listExceptions.innerHTML = '';
 
-    // SHOW EXACTLY WHAT THE DATA IS ON THE SCREEN
     if (!att.users || att.users.length === 0) {
-        listMorning.innerHTML = `
-            <div class="p-4 text-rose-600 font-bold">
-                ERROR: No users in the array. <br>
-                <span class="text-sm text-slate-600 font-normal">Check console for fetch errors.</span>
-            </div>`;
+        listMorning.innerHTML = '<div class="p-4 text-center text-slate-500">No employees found.</div>';
         return;
     }
 
+    // Get the selected date from the input
+    const selectedDate = document.getElementById('daily-date-picker').value;
+    
     let countMorning = 0, countAfternoon = 0, countExceptions = 0;
 
     att.users.forEach(emp => {
+        // Check if this employee has a record for the selected date
+        const dayRecords = att.records && att.records[selectedDate] ? att.records[selectedDate] : {};
+        const rec = dayRecords[emp.id] ? dayRecords[emp.id] : null;
+        
+        let status = rec ? rec.status : 'Unmarked';
+        let badgeClass = "bg-slate-100 text-slate-600";
+        
+        if (status === 'Present') badgeClass = "bg-emerald-100 text-emerald-700";
+        if (status === 'Late') badgeClass = "bg-amber-100 text-amber-700";
+        if (status === 'Absent') badgeClass = "bg-rose-100 text-rose-700";
+        if (status === 'Half-Day') badgeClass = "bg-rose-50 text-rose-600";
+
+        // THE BUTTONS ARE HERE:
         const rowHTML = `
             <div class="flex items-center justify-between p-4 border-b border-slate-100 hover:bg-slate-50">
                 <div class="flex items-center space-x-3">
@@ -4369,16 +4394,16 @@ function attRender() {
                         <div class="text-xs text-slate-500">Shift Start: ${emp.start}</div>
                     </div>
                 </div>
-                <div class="flex items-center space-x-3">
-                    <span class="px-2 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded">Unmarked</span>
+                <div class="flex items-center space-x-2">
+                    <span class="px-2 py-1 text-xs font-bold rounded ${badgeClass}">${status}</span>
+                    <button onclick="openAttModal('${emp.id}', '${emp.name}', '${emp.start}')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
+                        Mark &rarr;
+                    </button>
                 </div>
             </div>
         `;
 
-        if (emp.name.toLowerCase().includes('qasim')) {
-            listAfternoon.innerHTML += rowHTML;
-            countAfternoon++;
-        } else if (emp.shift === 'morning') {
+        if (emp.shift === 'morning') {
             listMorning.innerHTML += rowHTML;
             countMorning++;
         } else if (emp.shift === 'afternoon') {
