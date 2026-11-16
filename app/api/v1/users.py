@@ -1,18 +1,9 @@
 """
 Employees (users) endpoints - the Team page and admin tools.
-
-  GET    /users                        list (filtered by your role) + task counts
-  GET    /users/assignable             people you may assign tasks to
-  GET    /users/{id}                   one person
-  GET    /users/{id}/stats             their open / done / overdue counts
-  POST   /users                        add employee                (admin)
-  PATCH  /users/{id}                   edit name, email, role...   (admin)
-  PATCH  /users/{id}/status            activate / deactivate       (admin)
-  POST   /users/{id}/reset-password    set a new password          (admin)
 """
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, status, Query  # <--- Added Query
 
 from app.api.deps import AdminUser, CurrentUser, DbSession
 from app.models.enums import UserRole
@@ -36,10 +27,6 @@ def list_users(
     q: Annotated[str | None, Query(max_length=100, description="Search name, email or designation")] = None,
     include_stats: bool = True,
 ):
-    """
-    **Admin:** everyone. **Team lead:** own department only. **Employee:** only themselves.
-    Each item includes `stats` (open / done / overdue) for the Team cards.
-    """
     items, total = user_service.list_users(
         db, user, pagination, department_id=department_id, department=department,
         role=role, is_active=is_active, q=q, include_stats=include_stats)
@@ -49,7 +36,6 @@ def list_users(
 @router.get("/assignable", response_model=list[UserBrief],
             summary="People I may assign tasks to")
 def assignable(user: CurrentUser, db: DbSession):
-    """Admin: all active non-admins. Team lead: themselves + active employees of their department."""
     return user_service.assignable_users(db, user)
 
 
@@ -70,10 +56,6 @@ def get_stats(user_id: int, user: CurrentUser, db: DbSession):
 @router.post("", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED,
              summary="Add employee (admin)")
 def create_user(body: UserCreate, admin: AdminUser, db: DbSession):
-    """
-    Same fields as the frontend form: name, email, department (name or id), role.
-    If you do not send `password`, a **temporary password** is generated and returned once.
-    """
     new_user, temp = user_service.create_user(db, admin, body)
     out = UserOut.model_validate(new_user)
     out.stats = UserStats()
@@ -84,35 +66,35 @@ def create_user(body: UserCreate, admin: AdminUser, db: DbSession):
 def update_user(
     user_id: int,
     user_in: UserUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    admin: AdminUser,   # <--- Uses the custom Admin dependency
+    db: DbSession       # <--- Uses the custom DB dependency
 ):
-    # Ensure only Admins can do this
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    # AdminUser dependency already handles the 403 Forbidden check for non-admins
 
     # Prevent changing own role
-    if user_id == current_user.id and user_in.role and user_in.role != current_user.role:
+    if user_id == admin.id and user_in.role and user_in.role != admin.role:
         raise HTTPException(status_code=400, detail="You cannot change your own role")
 
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(user_service.User).filter(user_service.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Apply the updates
     update_data = user_in.model_dump(exclude_unset=True)
-    
     for field, value in update_data.items():
         setattr(user, field, value)
         
     db.commit()
     db.refresh(user)
-    return user
+    
+    out = UserOut.model_validate(user)
+    out.stats = user_service.stats_for(db, [user.id])[user.id]
+    return out
 
 
 @router.patch("/{user_id}/status", response_model=UserOut,
               summary="Activate / deactivate (admin)")
 def set_status(user_id: int, body: UserStatusUpdate, admin: AdminUser, db: DbSession):
-    """Deactivated users are logged out of every device immediately and cannot log in."""
     updated = user_service.set_active(db, admin, user_id, body.is_active)
     out = UserOut.model_validate(updated)
     out.stats = user_service.stats_for(db, [updated.id])[updated.id]
