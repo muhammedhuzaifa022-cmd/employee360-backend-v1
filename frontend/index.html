@@ -4420,8 +4420,15 @@ async function attInit() {
         console.error("Fetch users error:", e);
     }
 
-    // 3. Fetch Attendance & Draw
-    await attLoadDay();
+    // 3. Sync reports + populate Employee Detail dropdown
+employees = att.users;
+initMonthlyDropdown();
+const mp = document.getElementById('monthly-picker');
+if (mp && !mp.value) mp.value = todayStr.slice(0, 7);
+currentDate = todayStr;
+updateDateDisplay();
+// 4. Fetch Attendance & Draw
+await attLoadDay();
 }
 
 
@@ -4717,8 +4724,8 @@ btn.className = "px-5 py-2 text-sm font-semibold rounded-lg transition-all text-
 btn.className = "px-5 py-2 text-sm font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900";
 }
 });
+if (tab === 'daily') attLoadDay();
 if (tab === 'monthly') renderMonthlyView();
-if (tab === 'yearly') renderYearlyView();
 }
 function switchShiftTab(key) {
 activeShiftTab = key;
@@ -6060,7 +6067,110 @@ function editUser(id) {
         ]
     });
 }
+/* ---- FIX PACK: monthly reads real records; range loads merge; date/search no longer clobber ---- */
 
+// THE core fix: read REAL server records, not just the dead local store
+function getMonthlyCellStatus(emp, dateStr, dayNum, dayInfo) {
+  const H = { code: 'H', label: dayInfo.name || 'Holiday', badge: 'bg-purple-100 text-purple-700', checkIn: '-', checkOut: '-' };
+  const local = attendanceData[dateStr] && attendanceData[dateStr][emp.id];
+  if (local) {
+    if (dayInfo.isHoliday && !local.overrideWorking) return H;
+    if (local.status && local.status !== 'Unmarked') return mapStatusToBadge(local.status, local.checkIn, local.checkOut);
+  }
+  const srv = att.records[dateStr] && att.records[dateStr][emp.id];
+  if (srv && srv.status && srv.status !== 'Unmarked') {
+    const ci = srv.checkIn || (srv.check_in ? String(srv.check_in).substring(0, 5) : '-');
+    const co = srv.checkOut || (srv.check_out ? String(srv.check_out).substring(0, 5) : '-');
+    return mapStatusToBadge(srv.status, ci, co);
+  }
+  if (dayInfo.isHoliday) return H;
+  return { code: '-', label: 'Unmarked', badge: 'bg-slate-100 text-slate-500', checkIn: '-', checkOut: '-' };
+}
+
+// Merge month data instead of wiping it; keep check-out times for Employee Detail
+async function attLoadRange(startDate, endDate) {
+  try {
+    const res = await fetch(`${ATT_TEAM_URL}?start_date=${startDate}&end_date=${endDate}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      data.forEach(item => {
+        if (!att.records[item.date]) att.records[item.date] = {};
+        att.records[item.date][item.employee_id] = {
+          ...item,
+          checkIn: item.check_in ? String(item.check_in).substring(0, 5) : '-',
+          checkOut: item.check_out ? String(item.check_out).substring(0, 5) : '-'
+        };
+      });
+    }
+  } catch (e) { console.log('No attendance data for range.', e); }
+  attRender();
+}
+
+// Date controls: drive the real att flow only
+function handleDateChange(val) {
+  if (!val) return;
+  att.date = val;
+  currentDate = val;
+  document.getElementById('quick-month-jump').value = val.substring(0, 7);
+  const mp = document.getElementById('monthly-picker');
+  if (mp) mp.value = val.substring(0, 7);
+  updateDateDisplay();
+  attLoadDay();
+}
+function navigateDate(days) {
+  const base = document.getElementById('daily-date-picker').value || att.date;
+  const d = new Date(base + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  const nd = d.toLocaleDateString('en-CA');
+  document.getElementById('daily-date-picker').value = nd;
+  handleDateChange(nd);
+}
+function handleMonthJump(val) {
+  if (!val) return;
+  document.getElementById('daily-date-picker').value = val + '-01';
+  handleDateChange(val + '-01');
+}
+
+// Search: filter the real rendered rows instead of re-rendering the dead old list
+function handleSearch(val) {
+  const q = String(val || '').toLowerCase().trim();
+  let visible = 0;
+  ['morning', 'afternoon', 'exceptions'].forEach(k => {
+    const list = document.getElementById('list-' + k);
+    if (!list) return;
+    [...list.children].forEach(row => {
+      const hit = !q || row.textContent.toLowerCase().includes(q);
+      row.style.display = hit ? '' : 'none';
+      if (hit) visible++;
+    });
+  });
+  const ns = document.getElementById('no-search-results');
+  if (ns) ns.classList.toggle('hidden', !q || visible > 0);
+}
+
+// The Reset/Clear button in the mark popup calls this — it didn't exist (crashed on click)
+async function resetAttendance() {
+  if (!currentMarkEmpId) return;
+  const dateVal = document.getElementById('daily-date-picker').value || att.date;
+  try {
+    const res = await fetch(ATT_MARK_URL, {
+      method: 'POST', headers: attAuthHeaders(),
+      body: JSON.stringify({ employee_id: parseInt(currentMarkEmpId, 10), date: dateVal, status: 'Unmarked', check_in: null, check_out: null })
+    });
+    if (res.ok) {
+      document.getElementById('att-modal').classList.add('hidden');
+      showStandardToast('Attendance cleared.');
+      await attLoadDay();
+      return;
+    }
+  } catch (e) { /* fall through to local clear */ }
+  if (att.records[dateVal]) delete att.records[dateVal][currentMarkEmpId];
+  document.getElementById('att-modal').classList.add('hidden');
+  attRender();
+  showStandardToast('Cleared on screen only — server keeps the last saved mark.');
+}
 
 
 load();
