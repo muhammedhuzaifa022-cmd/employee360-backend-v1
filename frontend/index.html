@@ -5325,11 +5325,23 @@ async function deleteHoliday(id) {
 }
 // ================= MONTHLY & YEARLY REPORTS =================
 function switchMonthlySubTab(sub) {
-activeMonthlySubTab = sub;
-document.getElementById('msub-team').className = sub === 'team' ? "px-4 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800" : "px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900";
-document.getElementById('msub-emp').className = sub === 'employee' ? "px-4 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800" : "px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900";
-document.getElementById('monthly-emp-container').classList.toggle('hidden', sub === 'team');
-renderMonthlyView();
+    activeMonthlySubTab = sub;
+    const teamBtn = document.getElementById('msub-team');
+    const empBtn = document.getElementById('msub-emp');
+    const empContainer = document.getElementById('monthly-emp-container');
+
+    if (!teamBtn || !empBtn) return;
+
+    if (sub === 'team') {
+        teamBtn.className = "px-4 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800";
+        empBtn.className = "px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900";
+        if(empContainer) empContainer.classList.add('hidden');
+    } else {
+        empBtn.className = "px-4 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800";
+        teamBtn.className = "px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900";
+        if(empContainer) empContainer.classList.remove('hidden');
+    }
+    renderMonthlyView();
 }
 function initMonthlyDropdown() {
 const select = document.getElementById('monthly-employee-select');
@@ -5366,7 +5378,240 @@ if (status === 'Sick Leave') return { code: 'SL', label: 'Sick Leave', badge: 'b
 if (status === 'Absent') return { code: 'A', label: 'Absent', badge: 'bg-red-100 text-red-800', checkIn, checkOut };
 return { code: '-', label: status, badge: 'bg-slate-100 text-slate-500', checkIn, checkOut };
 }
+function renderMonthlyView(sync = true) {
+    // 1. SAFETY CHECK: Pull from att.users if employees is empty
+    if (typeof employees === 'undefined' || !employees || employees.length === 0) {
+        employees = att.users || [];
+    }
 
+    const monthPicker = document.getElementById('monthly-picker');
+    if (!monthPicker) return;
+
+    const monthVal = monthPicker.value;
+    if (!monthVal) return;
+
+    const [year, month] = monthVal.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // 2. Fetch data if we need to sync
+    if (sync !== false) {
+        const first = monthVal + '-01';
+        const last = monthVal + '-' + String(daysInMonth).padStart(2, '0');
+
+        attLoadRange(first, last).then(() => {
+            if (typeof activeTab !== 'undefined' && activeTab === 'monthly') {
+                renderMonthlyView(false);
+            }
+        });
+    }
+
+    // 3. Calculate Working Days & Days Meta
+    let monthWorkingDays = 0;
+    const monthDaysMeta = [];
+
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+        const dateObj = new Date(year, month - 1, d);
+        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+        const dayInfo = getDayType(dateStr);
+
+        if (!dayInfo.isHoliday) {
+            monthWorkingDays++;
+        }
+
+        monthDaysMeta.push({ d, dateStr, dayName, dayInfo });
+    }
+
+    const thead = document.getElementById('monthly-table-header');
+    const tbody = document.getElementById('monthly-table-body');
+
+    if (!thead || !tbody) return;
+
+    // 4. SAFETY CHECK: If still no employees, show loading message
+    if (!employees || employees.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="100" class="text-center p-4 text-slate-500">
+                    Loading employee data...
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // 5. Draw Team Overview or Employee Detail
+    if (typeof activeMonthlySubTab !== 'undefined' && activeMonthlySubTab === 'team') {
+
+        // --- TEAM OVERVIEW ---
+        let headerHtml = `<th class="py-3 px-4 sticky left-0 bg-slate-50 z-20 border-r border-slate-200 min-w-[180px]">Employee</th>`;
+
+        monthDaysMeta.forEach(m => {
+            const isHol = m.dayInfo.isHoliday;
+
+            headerHtml += `
+                <th title="${m.dayInfo.name || m.dayName}" class="py-2 px-1.5 text-center min-w-[34px] ${isHol ? 'bg-purple-50 text-purple-700' : ''}">
+                    <div class="text-[11px] font-bold">${m.d}</div>
+                    <div class="text-[9px] font-normal opacity-75">${m.dayName[0]}</div>
+                </th>
+            `;
+        });
+
+        headerHtml += `<th class="py-3 px-3 text-center bg-indigo-50 text-indigo-700 font-bold border-l border-slate-200">Payable</th>`;
+
+        thead.innerHTML = headerHtml;
+
+        let totalTeamPresent = 0;
+        let totalTeamLate = 0;
+        let totalTeamHalf = 0;
+        let totalTeamCasual = 0;
+        let totalTeamSick = 0;
+        let totalTeamPayable = 0;
+
+        let rowsHtml = '';
+
+        employees.forEach(emp => {
+            let empPayable = 0;
+            let rowCells = '';
+
+            monthDaysMeta.forEach(m => {
+                const cell = getMonthlyCellStatus(emp, m.dateStr, m.d, m.dayInfo);
+
+                if (!m.dayInfo.isHoliday) {
+                    if (cell.code === 'P' || cell.code === 'WFH') {
+                        totalTeamPresent++;
+                        empPayable += 1;
+                    } else if (cell.code === 'L') {
+                        totalTeamLate++;
+                        empPayable += 1;
+                    } else if (cell.code === 'HD') {
+                        totalTeamHalf++;
+                        empPayable += 0.5;
+                    } else if (cell.code === 'CL') {
+                        totalTeamCasual++;
+                        empPayable += 1;
+                    } else if (cell.code === 'SL') {
+                        totalTeamSick++;
+                        empPayable += 1;
+                    }
+                }
+
+                rowCells += `
+                    <td title="${m.dateStr} (${m.dayName}): ${cell.label}" class="py-2 px-1 text-center border-r border-slate-50 ${m.dayInfo.isHoliday ? 'bg-purple-50/40' : ''}">
+                        <span class="inline-block w-6 py-0.5 rounded text-[10px] font-bold ${cell.badge}">${cell.code}</span>
+                    </td>
+                `;
+            });
+
+            totalTeamPayable += empPayable;
+
+            rowsHtml += `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap">
+                        <div class="text-xs font-bold">${emp.name}</div>
+                        <div class="text-[10px] text-slate-400 font-normal">${emp.id}</div>
+                    </td>
+
+                    ${rowCells}
+
+                    <td class="py-2.5 px-3 text-center font-bold bg-indigo-50/40 text-indigo-700 border-l border-slate-200 text-xs">
+                        ${empPayable}/${monthWorkingDays}
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = rowsHtml;
+
+        // Update Top Stats
+        const empCount = employees.length || 1;
+
+        document.getElementById('m-working').innerText = monthWorkingDays;
+        document.getElementById('m-present').innerText = totalTeamPresent;
+        document.getElementById('m-late').innerText = totalTeamLate;
+        document.getElementById('m-half').innerText = totalTeamHalf;
+        document.getElementById('m-casual').innerText = totalTeamCasual;
+        document.getElementById('m-sick').innerText = totalTeamSick;
+        document.getElementById('m-payable').innerText = `${(totalTeamPayable / empCount).toFixed(1)} avg`;
+
+    } else {
+
+        // --- EMPLOYEE DETAIL ---
+        const selectEl = document.getElementById('monthly-employee-select');
+
+        const selectedEmpId = selectEl
+            ? selectEl.value
+            : (employees[0] ? employees[0].id : null);
+
+        const emp = employees.find(e => e.id === selectedEmpId) || employees[0];
+
+        if (!emp) return;
+
+        thead.innerHTML = `
+            <th class="py-3 px-4">Date</th>
+            <th class="py-3 px-4">Day</th>
+            <th class="py-3 px-4">Status</th>
+            <th class="py-3 px-4">Check-in Time</th>
+            <th class="py-3 px-4">Check-out Time</th>
+        `;
+
+        let empPresent = 0;
+        let empLate = 0;
+        let empHalf = 0;
+        let empCasual = 0;
+        let empSick = 0;
+        let empPayable = 0;
+
+        let rowsHtml = '';
+
+        monthDaysMeta.forEach(m => {
+            const cell = getMonthlyCellStatus(emp, m.dateStr, m.d, m.dayInfo);
+
+            if (!m.dayInfo.isHoliday) {
+                if (cell.code === 'P' || cell.code === 'WFH') {
+                    empPresent++;
+                    empPayable += 1;
+                } else if (cell.code === 'L') {
+                    empLate++;
+                    empPayable += 1;
+                } else if (cell.code === 'HD') {
+                    empHalf++;
+                    empPayable += 0.5;
+                } else if (cell.code === 'CL') {
+                    empCasual++;
+                    empPayable += 1;
+                } else if (cell.code === 'SL') {
+                    empSick++;
+                    empPayable += 1;
+                }
+            }
+
+            rowsHtml += `
+                <tr class="hover:bg-slate-50 ${m.dayInfo.isHoliday ? 'bg-purple-50/30' : ''}">
+                    <td class="py-3 px-4 font-medium">${m.dateStr}</td>
+                    <td class="py-3 px-4 text-slate-500">${m.dayName}</td>
+                    <td class="py-3 px-4">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${cell.badge}">
+                            ${cell.label}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-slate-600">${fmt12(cell.checkIn)}</td>
+                    <td class="py-3 px-4 text-slate-600">${fmt12(cell.checkOut)}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = rowsHtml;
+
+        document.getElementById('m-working').innerText = monthWorkingDays;
+        document.getElementById('m-present').innerText = empPresent;
+        document.getElementById('m-late').innerText = empLate;
+        document.getElementById('m-half').innerText = empHalf;
+        document.getElementById('m-casual').innerText = empCasual;
+        document.getElementById('m-sick').innerText = empSick;
+        document.getElementById('m-payable').innerText = empPayable;
+    }
+}
 
 function renderYearlyView() {
     // SAFETY CHECK: Pull from att.users if employees is empty
