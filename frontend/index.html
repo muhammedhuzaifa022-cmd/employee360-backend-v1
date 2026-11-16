@@ -2790,6 +2790,7 @@ return `
 </div>
 </div>
 </section>
+
 <!-- ================= TAB 3: YEARLY REPORT ================= -->
 <section id="view-yearly" class="hidden mt-6 flex-1 flex flex-col space-y-6">
 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
@@ -3050,7 +3051,38 @@ class="w-full text-center tracking-widest text-2xl font-bold bg-slate-50 border 
     <!-- END OF HOLIDAY MODAL -->
 
     
+<!-- Mark Attendance Modal -->
+<div id="att-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded-xl w-80 shadow-2xl">
+        <h3 id="att-m-name" class="font-bold text-lg mb-1">Employee Name</h3>
+        <p id="att-m-meta" class="text-xs text-slate-500 mb-4">Shift Start: 09:00 AM</p>
+        
+        <!-- Status Dropdown -->
+        <label class="block text-xs font-bold text-slate-600 mb-1">Status</label>
+        <select id="att-m-status" class="w-full border p-2 rounded mb-3 text-sm font-semibold">
+            <option value="Auto">Auto (Calculate from time)</option>
+            <option value="WFH">WFH (Work From Home)</option>
+            <option value="Sick Leave">Sick Leave</option>
+            <option value="Casual Leave">Casual Leave</option>
+            <option value="Half-Day">Half-Day</option>
+            <option value="Absent">Absent</option>
+        </select>
 
+        <label class="block text-xs font-bold text-slate-600 mb-1">Arrival Time</label>
+        <div class="flex gap-2 mb-3">
+            <input type="text" id="att-m-in" class="w-full border p-2 rounded text-center text-xl font-bold" placeholder="e.g. 913">
+            <select id="att-m-period" class="border p-2 rounded font-bold">
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+            </select>
+        </div>
+        
+        <div class="flex justify-end gap-2">
+            <button onclick="document.getElementById('att-modal').classList.add('hidden')" class="px-3 py-2 text-slate-600 font-bold text-sm">Cancel</button>
+            <button onclick="saveAttRecord()" class="px-4 py-2 bg-indigo-600 text-white font-bold text-sm rounded-lg">Save</button>
+        </div>
+    </div>
+</div>
 `;
 }
 /* ============ TASKS VIEW ============ */
@@ -5561,6 +5593,115 @@ if (!toast) return;
 document.getElementById('standard-toast-msg').innerText = msg;
 toast.classList.remove('translate-y-28', 'opacity-0');
 setTimeout(() => toast.classList.add('translate-y-28', 'opacity-0'), 3500);
+}
+
+
+// ================= ATTENDANCE MODAL LOGIC =================
+let currentMarkEmpId = null;
+let currentMarkShiftStart = null;
+
+function formatShiftTime(time) {
+    if (!time) return '';
+    const [hours, minutes] = time.split(':').map(Number);
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    return `${String(formattedHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${period}`;
+}
+
+function openAttModal(id, name, shiftStart) {
+    currentMarkEmpId = id;
+    currentMarkShiftStart = shiftStart;
+
+    document.getElementById('att-m-name').innerText = name;
+    document.getElementById('att-m-meta').innerText = `Shift Start: ${formatShiftTime(shiftStart)}`;
+    document.getElementById('att-m-in').value = '';
+    document.getElementById('att-m-status').value = 'Auto';
+
+    // Automatically select AM/PM based on employee shift
+    const shiftHour = parseInt(shiftStart.split(':')[0], 10);
+    document.getElementById('att-m-period').value = shiftHour >= 12 ? 'PM' : 'AM';
+
+    document.getElementById('att-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('att-m-in').focus(), 100);
+}
+
+function parseTimeInput(val, period) {
+    let cleanVal = val.trim().replace(/[^0-9]/g, '');
+    let hours, minutes;
+
+    if (cleanVal.length === 3) {
+        hours = parseInt(cleanVal.substring(0, 1), 10);
+        minutes = parseInt(cleanVal.substring(1), 10);
+    } else if (cleanVal.length === 4) {
+        hours = parseInt(cleanVal.substring(0, 2), 10);
+        minutes = parseInt(cleanVal.substring(2), 10);
+    } else {
+        return null;
+    }
+
+    if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return null;
+
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+async function saveAttRecord() {
+    if (!currentMarkEmpId) return;
+
+    const rawVal = document.getElementById('att-m-in').value;
+    const period = document.getElementById('att-m-period').value;
+    const selectedStatus = document.getElementById('att-m-status').value;
+    const dateVal = document.getElementById('daily-date-picker').value;
+    
+    let finalStatus = selectedStatus;
+    let finalTime = null;
+
+    // LOGIC: If Auto, calculate time and let backend decide Present/Late/Half-Day
+    if (selectedStatus === 'Auto') {
+        const timeVal = parseTimeInput(rawVal, period);
+        if (!timeVal) return alert("Invalid time! Please enter a valid time such as 913 or 1305.");
+        finalTime = timeVal + ':00';
+        finalStatus = 'Present'; // Backend will auto-upgrade to Late if needed
+    } 
+    // LOGIC: If Sick Leave / Casual Leave / Absent, clear the time
+    else if (['Sick Leave', 'Casual Leave', 'Absent'].includes(selectedStatus)) {
+        finalTime = null;
+    } 
+    // LOGIC: If WFH or Half-Day, use time if provided
+    else {
+        if (rawVal.trim() !== '') {
+            const timeVal = parseTimeInput(rawVal, period);
+            if (!timeVal) return alert("Invalid time format.");
+            finalTime = timeVal + ':00';
+        }
+    }
+
+    const token = localStorage.getItem('access_token');
+    try {
+        const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/attendance/mark', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                employee_id: parseInt(currentMarkEmpId, 10),
+                date: dateVal,
+                status: finalStatus,
+                check_in: finalTime
+            })
+        });
+
+        if (res.ok) {
+            document.getElementById('att-modal').classList.add('hidden');
+            await attLoadDay();
+        } else {
+            const errorData = await res.json().catch(() => ({}));
+            alert(errorData.detail || "Failed to save attendance.");
+        }
+    } catch (e) {
+        console.error("Attendance save error:", e);
+        alert("Error saving attendance: " + e.message);
+    }
 }
 /* ============ BOOT ============ */
 
