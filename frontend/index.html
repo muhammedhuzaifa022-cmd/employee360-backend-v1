@@ -2805,7 +2805,7 @@ return `
 </div>
 <div class="flex-1">
 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Search Employee</label>
-<input type="text" id="yearly-search" oninput="renderYearlyView()" placeholder="Filter employees..." class="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-medium w-full sm:w-64">
+<input type="text" id="yearly-search" oninput="renderYearlyView(false)" placeholder="Filter employees..." class="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-medium w-full sm:w-64">
 </div>
 </div>
 <div>
@@ -5620,7 +5620,7 @@ function renderMonthlyView(sync = true) {
     }
 }
 
-function renderYearlyView() {
+function renderYearlyView(sync = true) {
     // SAFETY CHECK: Pull from att.users if employees is empty
     if (typeof employees === 'undefined' || !employees || employees.length === 0) {
         employees = att.users || [];
@@ -5634,9 +5634,16 @@ function renderYearlyView() {
 
     const searchQ = searchInput ? searchInput.value.toLowerCase().trim() : '';
     const year = Number(yearSelect.value);
-
-    if (!year || !Number.isFinite(year)) return;
-
+if (!year || !Number.isFinite(year)) return;
+// Fetch the FULL year from the backend, then redraw (same pattern as Monthly)
+if (sync !== false) {
+  attLoadRange(`${year}-01-01`, `${year}-12-31`).then(() => {
+    if (activeTab === 'yearly') {
+      if (att.users && att.users.length) employees = att.users;
+      renderYearlyView(false);
+    }
+  });
+}
     // Yearly statistics
     let totPresent = 0;
     let totLate = 0;
@@ -5868,14 +5875,37 @@ XLSX.writeFile(wb, `Monthly_Attendance_${monthVal}.xlsx`);
 showStandardToast("Monthly matrix exported successfully to Excel.");
 }
 function exportYearlyExcel() {
-const year = document.getElementById('yearly-year-select').value;
-const wb = XLSX.utils.book_new();
-const wsData = [[`Employee360 - Yearly Attendance Report (${year})`], [], ["ID", "Name", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]];
-employees.forEach(e => wsData.push([e.id, e.name, "95%", "96%", "94%", "95%", "97%", "92%", "95%", "96%", "94%", "95%", "93%", "96%"]));
-const ws = XLSX.utils.aoa_to_sheet(wsData);
-XLSX.utils.book_append_sheet(wb, ws, "Yearly Report");
-XLSX.writeFile(wb, `Yearly_Attendance_Report_${year}.xlsx`);
-showStandardToast("Yearly report exported successfully to Excel.");
+  const year = Number(document.getElementById('yearly-year-select').value);
+  if (!employees || !employees.length) employees = att.users || [];
+  const wb = XLSX.utils.book_new();
+  const wsData = [
+    [`Employee360 - Yearly Attendance Report (${year})`], [],
+    ["ID", "Name", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Yearly Avg", "Payable Days"]
+  ];
+  employees.forEach(emp => {
+    const pcts = []; let payable = 0;
+    for (let m = 0; m < 12; m++) {
+      let working = 0, present = 0;
+      const dim = new Date(year, m + 1, 0).getDate();
+      for (let d = 1; d <= dim; d++) {
+        const ds = `${year}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const di = getDayType(ds);
+        if (di.isHoliday) continue;
+        working++;
+        const cell = getMonthlyCellStatus(emp, ds, d, di);
+        if (['P', 'WFH', 'L', 'CL', 'SL'].includes(cell.code)) { present += 1; payable += 1; }
+        else if (cell.code === 'HD') { present += 0.5; payable += 0.5; }
+      }
+      pcts.push(working ? Math.round(present / working * 100) : 0);
+    }
+    const active = pcts.filter(p => p > 0);
+    const avg = active.length ? Math.round(active.reduce((a, b) => a + b, 0) / active.length) : 0;
+    wsData.push([emp.id, emp.name, ...pcts.map(p => p ? p + '%' : '-'), avg ? avg + '%' : '-', payable]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, "Yearly Report");
+  XLSX.writeFile(wb, `Yearly_Attendance_Report_${year}.xlsx`);
+  showStandardToast("Yearly report exported successfully to Excel.");
 }
 function showStandardToast(msg) {
 const toast = document.getElementById('standard-toast');
