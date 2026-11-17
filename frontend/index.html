@@ -7460,6 +7460,343 @@ async function saveAttRecord() {
   setTimeout(decorate, 700);
 })();
 </script>
+<script>
+/* ===== Monthly Report — complete, race-proof data layer + rebuilt report UI ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = j => { const h = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }; if (j) h['Content-Type'] = 'application/json'; return h; };
+  const UK = 'e360-workday-unlocks';
+  const MC = {};
+  let tok = 0, busy = false, prog = 0, err = null, q = '';
+
+  const pad = n => String(n).padStart(2, '0');
+  const hhmm = m => m == null ? null : pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  const toMin = v => {
+    if (v == null) return null;
+    const s = String(v).trim(); if (!s || s === '-') return null;
+    const p = s.split(':'), h = parseInt(p[0], 10), mi = parseInt(p[1] || '0', 10);
+    return (Number.isFinite(h) && Number.isFinite(mi)) ? h * 60 + mi : null;
+  };
+  const f12 = m => m == null ? '—' : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
+  const dur = m => m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : w === 6 ? 'Saturday' : null }; } };
+  const selDay = () => { const p = document.getElementById('daily-date-picker'); return (p && p.value) || A().date || ''; };
+  const monthKey = () => {
+    const p = document.getElementById('monthly-picker'); if (!p) return '';
+    if (!p.value) p.value = (selDay() || new Date().toLocaleDateString('en-CA')).slice(0, 7);
+    return p.value;
+  };
+  const norm = it => ({ status: it.status || 'Unmarked', in: toMin(it.check_in != null ? it.check_in : it.checkIn), out: toMin(it.check_out != null ? it.check_out : it.checkOut) });
+
+  const CODE = {
+    'Present': ['P', 'bg-emerald-100 text-emerald-700', 1],
+    'Late': ['L', 'bg-amber-100 text-amber-800', 1],
+    'Half-Day': ['HD', 'bg-rose-100 text-rose-700', 0.5],
+    'WFH': ['WFH', 'bg-indigo-100 text-indigo-700', 1],
+    'Casual Leave': ['CL', 'bg-yellow-100 text-yellow-800', 1],
+    'Sick Leave': ['SL', 'bg-orange-100 text-orange-800', 1],
+    'Absent': ['A', 'bg-red-100 text-red-800', 0]
+  };
+  const cellOf = (rec, off, name) => {
+    if (off) return { code: 'H', label: name || 'Holiday', cls: 'bg-purple-100 text-purple-700', pay: 0, in: null, out: null };
+    if (!rec || !rec.status || rec.status === 'Unmarked') return { code: '-', label: 'Unmarked', cls: 'bg-slate-100 text-slate-400', pay: 0, in: null, out: null };
+    const c = CODE[rec.status];
+    if (!c) return { code: '-', label: rec.status, cls: 'bg-slate-100 text-slate-500', pay: 0, in: rec.in, out: rec.out };
+    return { code: c[0], label: rec.status, cls: c[1], pay: c[2], in: rec.in, out: rec.out };
+  };
+
+  async function people() {
+    let list = A().users || [];
+    if (list.length) return list;
+    try { if (typeof employees !== 'undefined' && employees.length) return employees; } catch (e) {}
+    const r = await fetch(API + '/users?page_size=100', { headers: HDR() });
+    if (!r.ok) throw new Error('Users API ' + r.status);
+    const d = await r.json();
+    list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => {
+      let shift = 'morning', start = '09:00';
+      if (u.custom_shift_start) {
+        start = String(u.custom_shift_start).slice(0, 5);
+        shift = start.startsWith('13') ? 'afternoon' : start.startsWith('09') ? 'morning' : 'exceptions';
+      }
+      return { id: String(u.id), name: u.full_name, shift, start };
+    });
+    if (typeof att !== 'undefined') att.users = list;
+    try { employees = list; } catch (e) {}
+    return list;
+  }
+
+  function merge(days) {
+    const R = A().records = A().records || {};
+    Object.keys(days).forEach(d => {
+      R[d] = R[d] || {};
+      Object.keys(days[d]).forEach(id => {
+        const r = days[d][id];
+        R[d][id] = Object.assign({}, R[d][id], { status: r.status, check_in: r.in == null ? null : hhmm(r.in) + ':00', check_out: r.out == null ? null : hhmm(r.out) + ':00', checkIn: hhmm(r.in) || '-', checkOut: hhmm(r.out) || '-' });
+      });
+    });
+  }
+
+  async function load(month, force) {
+    const c = MC[month];
+    if (c && !force && Date.now() - c.at < 45000) return c;
+    const my = ++tok; busy = true; prog = 0; err = null; chrome();
+    const [y, m] = month.split('-').map(Number);
+    const dim = new Date(y, m, 0).getDate(), size = Math.ceil(dim / 4), chunks = [];
+    for (let s = 1; s <= dim; s += size) chunks.push([month + '-' + pad(s), month + '-' + pad(Math.min(dim, s + size - 1))]);
+    const days = {}; let ok = 0;
+    await Promise.all(chunks.map(async ([a, b]) => {
+      try {
+        const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: HDR() });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const rows = await r.json();
+        (Array.isArray(rows) ? rows : []).forEach(it => {
+          const d = String(it.date);
+          (days[d] = days[d] || {})[String(it.employee_id)] = norm(it);
+        });
+        ok++;
+      } catch (e) {}
+      if (my === tok) { prog = Math.round(ok / chunks.length * 100); chrome(); }
+    }));
+    if (my !== tok) return MC[month] || { days: {}, at: 0 };
+    busy = false; prog = 100;
+    if (!ok) err = 'Could not load attendance from the server.';
+    MC[month] = { days, at: Date.now(), ok, total: chunks.length };
+    merge(days);
+    return MC[month];
+  }
+
+  /* ---- merge-only data loaders: daily fetches can no longer erase the month ---- */
+  window.attLoadDay = async function () {
+    const d = selDay(); if (!d) return;
+    try {
+      const r = await fetch(`${API}/attendance/team-attendance?start_date=${d}&end_date=${d}`, { headers: HDR() });
+      if (r.ok) {
+        const rows = await r.json(); const box = {};
+        (Array.isArray(rows) ? rows : []).forEach(it => { (box[String(it.date)] = box[String(it.date)] || {})[String(it.employee_id)] = norm(it); });
+        merge(box);
+        const k = d.slice(0, 7);
+        if (MC[k]) Object.keys(box).forEach(dd => { MC[k].days[dd] = Object.assign(MC[k].days[dd] || {}, box[dd]); });
+      }
+    } catch (e) {}
+    if (typeof attRender === 'function') attRender();
+  };
+  window.attLoadRange = async function (a, b) {
+    try {
+      const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: HDR() });
+      if (r.ok) {
+        const rows = await r.json(); const box = {};
+        (Array.isArray(rows) ? rows : []).forEach(it => { (box[String(it.date)] = box[String(it.date)] || {})[String(it.employee_id)] = norm(it); });
+        merge(box);
+      }
+    } catch (e) {}
+    if (typeof attRender === 'function') attRender();
+  };
+
+  /* ---- chrome: search, refresh, coverage ---- */
+  function ensure() {
+    const picker = document.getElementById('monthly-picker');
+    if (!picker) return false;
+    monthKey();
+    const wrap = picker.closest('section') || document.getElementById('view-monthly');
+    if (wrap && !document.getElementById('m-toolbar')) {
+      const stats = wrap.querySelector('.grid');
+      const bar = document.createElement('div');
+      bar.id = 'm-toolbar';
+      bar.className = 'bg-white rounded-2xl shadow-sm border border-slate-200 px-4 py-3 flex flex-col lg:flex-row items-stretch lg:items-center gap-3';
+      bar.innerHTML =
+        '<div class="relative flex-1 min-w-[180px]">' +
+          '<span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></span>' +
+          '<input id="m-emp-search" type="text" placeholder="Filter employees in this report..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">' +
+        '</div>' +
+        '<div class="flex-1 min-w-[200px]">' +
+          '<div class="flex items-center justify-between text-[11px] font-bold mb-1"><span id="m-cover" class="text-slate-500">Loading…</span><span id="m-pct" class="text-indigo-600 tabular-nums"></span></div>' +
+          '<div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><i id="m-bar" class="block h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-emerald-500 transition-all duration-500" style="width:0%"></i></div>' +
+        '</div>' +
+        '<button id="m-refresh" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-2"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v6h6M20 20v-6h-6M20 9a8 8 0 00-14.3-3.3M4 15a8 8 0 0014.3 3.3"/></svg><span>Refresh data</span></button>';
+      if (stats && stats.parentNode) stats.parentNode.insertBefore(bar, stats.nextSibling);
+      document.getElementById('m-emp-search').oninput = e => { q = e.target.value.toLowerCase().trim(); draw(); };
+      document.getElementById('m-refresh').onclick = async () => { const k = monthKey(); await load(k, true); draw(); if (typeof attRender === 'function') attRender(); };
+    }
+    const sc = document.querySelector('#view-monthly .overflow-x-auto');
+    if (sc) sc.classList.add('m-scroll');
+    const card = document.querySelector('#view-monthly table') && document.querySelector('#view-monthly table').closest('.bg-white');
+    if (card) card.classList.add('m-accent');
+    return true;
+  }
+
+  function chrome(counts) {
+    const cov = document.getElementById('m-cover'), pct = document.getElementById('m-pct'), bar = document.getElementById('m-bar'), btn = document.getElementById('m-refresh');
+    if (!cov) return;
+    if (busy) {
+      cov.textContent = 'Loading month data…'; cov.className = 'text-indigo-600';
+      pct.textContent = prog + '%'; bar.style.width = Math.max(6, prog) + '%';
+      if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+    if (err) { cov.textContent = err; cov.className = 'text-rose-600'; pct.textContent = ''; bar.style.width = '0%'; return; }
+    if (!counts) { cov.textContent = 'Ready'; cov.className = 'text-slate-500'; pct.textContent = ''; bar.style.width = '100%'; return; }
+    const pc = counts.working ? Math.round(counts.marked / counts.working * 100) : 0;
+    cov.textContent = counts.label + ' · ' + counts.days + ' days · ' + counts.working + ' working · ' + counts.marked + ' marked · ' + (counts.working - counts.marked) + ' unmarked';
+    cov.className = 'text-slate-500';
+    pct.textContent = pc + '% marked';
+    bar.style.width = pc + '%';
+  }
+
+  function meta(month) {
+    const [y, m] = month.split('-').map(Number);
+    const dim = new Date(y, m, 0).getDate(), u = unlocks(), out = [];
+    for (let d = 1; d <= dim; d++) {
+      const ds = month + '-' + pad(d), i = info(ds), off = !!i.isHoliday && !u[ds];
+      out.push({ d, ds, dow: new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short' }), name: i.name, off, working: !off });
+    }
+    return out;
+  }
+
+  function jump(ds) {
+    const p = document.getElementById('daily-date-picker'); if (p) p.value = ds;
+    if (typeof switchTab === 'function') switchTab('daily');
+    if (typeof handleDateChange === 'function') handleDateChange(ds);
+  }
+
+  async function draw() {
+    if (!ensure()) return;
+    const month = monthKey(); if (!month) return;
+    const thead = document.getElementById('monthly-table-header'), tbody = document.getElementById('monthly-table-body');
+    if (!thead || !tbody) return;
+    let list;
+    try { list = await people(); } catch (e) { err = e.message; chrome(); tbody.innerHTML = '<tr><td colspan="40" class="p-6 text-center text-rose-600 font-bold text-sm">' + esc(e.message) + '</td></tr>'; return; }
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="40" class="p-6 text-center text-slate-500 text-sm">No active employees.</td></tr>'; return; }
+    const days = (MC[month] && MC[month].days) || {};
+    const M = meta(month), u = unlocks(), sel = document.getElementById('monthly-employee-select');
+    const shown = list.filter(e => !q || String(e.name || '').toLowerCase().includes(q) || String(e.id).includes(q));
+    const working = M.filter(x => x.working).length;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const [yy, mm] = month.split('-').map(Number);
+    const label = new Date(yy, mm - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    if (typeof activeMonthlySubTab === 'undefined' || activeMonthlySubTab === 'team') {
+      if (sel && !sel.options.length) sel.innerHTML = list.map(e => '<option value="' + e.id + '">' + esc(e.name) + ' · #' + e.id + '</option>').join('');
+      thead.innerHTML = '<th class="py-3 px-4 sticky left-0 bg-slate-50 z-20 border-r border-slate-200 min-w-[190px]">Employee</th>' +
+        M.map(x => '<th title="' + x.ds + (x.name ? ' · ' + x.name : '') + '" class="py-2 px-1.5 text-center min-w-[36px] ' + (x.off ? 'bg-purple-50 text-purple-700' : '') + (x.ds === selDay() ? ' ring-1 ring-inset ring-indigo-400' : '') + '"><div class="text-[11px] font-bold">' + x.d + '</div><div class="text-[9px] font-normal opacity-70">' + x.dow[0] + '</div></th>').join('') +
+        '<th class="py-3 px-3 text-center bg-indigo-50 text-indigo-700 font-bold border-l border-slate-200">Payable</th>';
+      let P = 0, L = 0, H = 0, C = 0, S = 0, PAY = 0, marked = 0, rows = '';
+      shown.forEach(emp => {
+        let pay = 0, cells = '';
+        M.forEach(x => {
+          const rec = days[x.ds] && days[x.ds][String(emp.id)];
+          const c = cellOf(rec, x.off, x.name);
+          if (x.working) {
+            if (c.code !== '-') marked++;
+            if (c.code === 'P' || c.code === 'WFH') P++;
+            else if (c.code === 'L') L++;
+            else if (c.code === 'HD') H++;
+            else if (c.code === 'CL') C++;
+            else if (c.code === 'SL') S++;
+            pay += c.pay;
+          }
+          const tip = x.ds + ' (' + x.dow + ') · ' + c.label + (c.in != null ? ' · In ' + f12(c.in) : '') + (c.out != null ? ' · Out ' + f12(c.out) : '');
+          cells += '<td title="' + esc(tip) + '" data-jump="' + x.ds + '" class="py-2 px-1 text-center border-r border-slate-50 cursor-pointer hover:bg-indigo-50/70 transition-colors ' + (x.off ? 'bg-purple-50/40' : '') + (x.ds === selDay() ? ' bg-indigo-50/50' : '') + '"><span class="inline-block min-w-[24px] px-1 py-0.5 rounded text-[10px] font-bold ' + c.cls + '">' + c.code + '</span></td>';
+        });
+        PAY += pay;
+        rows += '<tr class="hover:bg-slate-50 transition-colors"><td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap"><div class="text-xs font-bold">' + esc(emp.name) + '</div><div class="text-[10px] text-slate-400 font-normal">#' + esc(emp.id) + '</div></td>' + cells + '<td class="py-2.5 px-3 text-center font-bold bg-indigo-50/40 text-indigo-700 border-l border-slate-200 text-xs tabular-nums">' + (pay % 1 ? pay.toFixed(1) : pay) + '/' + working + '</td></tr>';
+      });
+      tbody.innerHTML = rows || '<tr><td colspan="40" class="p-6 text-center text-slate-500 text-sm">No employees match your filter.</td></tr>';
+      set('m-working', working); set('m-present', P); set('m-late', L); set('m-half', H); set('m-casual', C); set('m-sick', S);
+      set('m-payable', shown.length ? (PAY / shown.length).toFixed(1) + ' avg' : '0');
+      chrome({ label, days: M.length, working: working * shown.length, marked });
+    } else {
+      if (sel) {
+        const keep = sel.value;
+        const sig = list.map(e => e.id).join('|');
+        if (sel.dataset.sig !== sig) { sel.innerHTML = list.map(e => '<option value="' + e.id + '">' + esc(e.name) + ' · #' + e.id + '</option>').join(''); sel.dataset.sig = sig; }
+        if (keep && list.some(e => String(e.id) === keep)) sel.value = keep;
+      }
+      const id = sel && sel.value ? sel.value : list[0].id;
+      const emp = list.find(e => String(e.id) === String(id)) || list[0];
+      const sh = toMin(emp.start) == null ? 540 : toMin(emp.start);
+      thead.innerHTML = '<th class="py-3 px-4">Date</th><th class="py-3 px-4">Day</th><th class="py-3 px-4">Status</th><th class="py-3 px-4">Check-in</th><th class="py-3 px-4">Late by</th><th class="py-3 px-4">Check-out</th>';
+      let P = 0, L = 0, H = 0, C = 0, S = 0, PAY = 0, marked = 0, rows = '';
+      M.forEach(x => {
+        const rec = days[x.ds] && days[x.ds][String(emp.id)];
+        const c = cellOf(rec, x.off, x.name);
+        if (x.working) {
+          if (c.code !== '-') marked++;
+          if (c.code === 'P' || c.code === 'WFH') P++; else if (c.code === 'L') L++; else if (c.code === 'HD') H++; else if (c.code === 'CL') C++; else if (c.code === 'SL') S++;
+          PAY += c.pay;
+        }
+        const d = c.in == null ? null : c.in - sh;
+        const late = d == null ? '—' : d <= 0 ? '<span class="text-emerald-600 font-semibold">On time</span>' : d <= 5 ? '<span class="text-emerald-600 font-semibold">+' + d + 'm grace</span>' : '<span class="' + (d <= 180 ? 'text-amber-600' : 'text-rose-600') + ' font-semibold">+' + dur(d) + '</span>';
+        rows += '<tr data-jump="' + x.ds + '" class="cursor-pointer hover:bg-indigo-50/60 transition-colors ' + (x.off ? 'bg-purple-50/30' : '') + (x.ds === selDay() ? ' bg-indigo-50/50' : '') + '">' +
+          '<td class="py-3 px-4 font-medium tabular-nums">' + x.ds + '</td>' +
+          '<td class="py-3 px-4 text-slate-500">' + x.dow + '</td>' +
+          '<td class="py-3 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ' + c.cls + '">' + c.label + '</span></td>' +
+          '<td class="py-3 px-4 font-bold tabular-nums text-slate-800">' + f12(c.in) + '</td>' +
+          '<td class="py-3 px-4 text-xs">' + late + '</td>' +
+          '<td class="py-3 px-4 tabular-nums text-slate-600">' + f12(c.out) + '</td></tr>';
+      });
+      tbody.innerHTML = rows;
+      set('m-working', working); set('m-present', P); set('m-late', L); set('m-half', H); set('m-casual', C); set('m-sick', S);
+      set('m-payable', PAY % 1 ? PAY.toFixed(1) : PAY);
+      chrome({ label: label + ' · ' + emp.name, days: M.length, working, marked });
+    }
+    tbody.querySelectorAll('[data-jump]').forEach(el => el.onclick = () => jump(el.dataset.jump));
+  }
+
+  window.renderMonthlyView = function (sync) {
+    if (!ensure()) return;
+    const month = monthKey(); if (!month) return;
+    draw();
+    if (sync === false) { chrome(); return; }
+    load(month, false).then(() => { if (monthKey() === month) draw(); });
+  };
+
+  window.exportMonthlyExcel = async function () {
+    if (typeof XLSX === 'undefined') return;
+    const month = monthKey(); if (!month) return;
+    await load(month, false);
+    const list = await people(), days = (MC[month] && MC[month].days) || {}, M = meta(month);
+    const working = M.filter(x => x.working).length;
+    const wb = XLSX.utils.book_new();
+    const matrix = [['Employee360 — Monthly Attendance ' + month], [working + ' working days'], [], ['ID', 'Name', ...M.map(x => x.d + ' ' + x.dow), 'Payable', 'Working Days']];
+    const times = [['Check-in / Check-out — ' + month], [], ['ID', 'Name', 'Date', 'Day', 'Status', 'Check-in', 'Check-out']];
+    list.forEach(emp => {
+      let pay = 0; const row = [emp.id, emp.name];
+      M.forEach(x => {
+        const rec = days[x.ds] && days[x.ds][String(emp.id)];
+        const c = cellOf(rec, x.off, x.name);
+        row.push(c.code);
+        if (x.working) pay += c.pay;
+        times.push([emp.id, emp.name, x.ds, x.dow, c.label, c.in == null ? '' : f12(c.in), c.out == null ? '' : f12(c.out)]);
+      });
+      row.push(pay, working); matrix.push(row);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), 'Matrix ' + month);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(times), 'Times ' + month);
+    XLSX.writeFile(wb, 'Monthly_Attendance_' + month + '.xlsx');
+    if (typeof showStandardToast === 'function') showStandardToast('Monthly report exported.');
+  };
+
+  const prevTab = window.switchTab;
+  if (typeof prevTab === 'function') window.switchTab = function (t) { const r = prevTab.apply(this, arguments); if (t === 'monthly') setTimeout(() => window.renderMonthlyView(), 20); return r; };
+  const prevSub = window.switchMonthlySubTab;
+  if (typeof prevSub === 'function') window.switchMonthlySubTab = function (s) { try { activeMonthlySubTab = s; } catch (e) {} const r = prevSub.apply(this, arguments); draw(); return r; };
+  document.addEventListener('change', e => { if (e.target && (e.target.id === 'monthly-picker' || e.target.id === 'monthly-employee-select')) window.renderMonthlyView(); }, true);
+
+  const st = document.createElement('style');
+  st.textContent = '.m-scroll{scrollbar-width:thin;scrollbar-color:#a5b4fc #f1f5f9}' +
+    '.m-scroll::-webkit-scrollbar{height:11px;width:11px}' +
+    '.m-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}' +
+    '.m-scroll::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#a78bfa,#818cf8);border-radius:99px;border:2px solid #f1f5f9;background-clip:content-box}' +
+    '.m-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,#8b5cf6,#4f46e5);background-clip:content-box}' +
+    '.m-accent{position:relative}.m-accent::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#8b5cf6,#4f46e5,#0ea5e9,#10b981);z-index:30}';
+  document.head.appendChild(st);
+
+  setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'monthly') window.renderMonthlyView(); } catch (e) {} }, 800);
+})();
+</script>
 </body>
 </html>
 
