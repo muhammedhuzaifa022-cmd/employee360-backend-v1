@@ -6477,9 +6477,249 @@ render();
   document.addEventListener('input', e => { if (e.target && e.target.id === 'yearly-search') render(true); }, true);
   setTimeout(() => { const s = document.getElementById('view-yearly'); if (s && !s.classList.contains('hidden')) render(false); }, 400);
 })();
+
+
+
 </script>
+<script>
+/* Late / Half-Day rules for the Mark popup (Auto mode) — works for every shift start */
+async function saveAttRecord() {
+  if (!currentMarkEmpId) return;
+  const rawVal = document.getElementById('att-m-in').value;
+  const period = document.getElementById('att-m-period').value;
+  const selectedStatus = document.getElementById('att-m-status').value;
+  const dateVal = document.getElementById('daily-date-picker').value;
+  let finalStatus = selectedStatus;
+  let finalTime = null;
 
+  const shiftStr = currentMarkShiftStart || '09:00';
+  const [sH, sM] = shiftStr.split(':').map(Number);
+  const shiftMin = sH * 60 + sM;
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const toStr = v => String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
 
+  const arrival = () => {
+    const t = parseTimeInput(rawVal, period);
+    if (!t) return null;
+    let a = toMin(t);
+    // If AM/PM lands >4h before shift (e.g. "1201" as AM -> 00:01), flip to the sensible side
+    if (a < shiftMin - 240 && a + 720 <= 1439) a += 720;
+    return a;
+  };
+
+  if (selectedStatus === 'Auto') {
+    const a = arrival();
+    if (a === null) return alert('Invalid time! Please enter a valid time such as 913 or 1305.');
+    const lateBy = a - shiftMin;
+    finalStatus = lateBy <= 5 ? 'Present' : lateBy <= 180 ? 'Late' : 'Half-Day';
+    finalTime = toStr(a) + ':00';
+  } else if (['Sick Leave', 'Casual Leave', 'Absent'].includes(selectedStatus)) {
+    finalTime = null;
+  } else {
+    if (rawVal.trim() !== '') {
+      const a = arrival();
+      if (a === null) return alert('Invalid time format.');
+      finalTime = toStr(a) + ':00';
+    }
+  }
+
+  try {
+    const res = await fetch('https://employee360-backend-v1.onrender.com/api/v1/attendance/mark', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token'), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: parseInt(currentMarkEmpId, 10),
+        date: dateVal,
+        status: finalStatus,
+        check_in: finalTime
+      })
+    });
+    if (res.ok) {
+      document.getElementById('att-modal').classList.add('hidden');
+      await attLoadDay();
+    } else {
+      const errorData = await res.json().catch(() => ({}));
+      alert(errorData.detail || 'Failed to save attendance.');
+    }
+  } catch (e) {
+    alert('Error saving attendance: ' + e.message);
+  }
+}
+</script>
+<script>
+/* Enter-to-save + live status preview for the attendance mark popup */
+(function () {
+  let saving = false;
+
+  const pad = v => String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+  const fmt12m = v => {
+    const h = Math.floor(v / 60), m = v % 60;
+    return String(h % 12 === 0 ? 12 : h % 12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM');
+  };
+  const shiftMin = () => {
+    const s = (typeof currentMarkShiftStart !== 'undefined' && currentMarkShiftStart) ? String(currentMarkShiftStart) : '09:00';
+    const p = s.split(':').map(Number);
+    return (p[0] || 0) * 60 + (p[1] || 0);
+  };
+  const arrival = () => {
+    const inp = document.getElementById('att-m-in');
+    const per = document.getElementById('att-m-period');
+    if (!inp || !per) return null;
+    const t = parseTimeInput(inp.value, per.value);
+    if (!t) return null;
+    const p = t.split(':').map(Number);
+    let a = p[0] * 60 + p[1];
+    const sm = shiftMin();
+    if (a < sm - 240 && a + 720 <= 1439) a += 720;
+    return a;
+  };
+  const statusFor = a => {
+    const d = a - shiftMin();
+    return d <= 5 ? 'Present' : d <= 180 ? 'Late' : 'Half-Day';
+  };
+
+  function ensurePreview() {
+    let el = document.getElementById('att-enter-preview');
+    const inp = document.getElementById('att-m-in');
+    if (!el && inp) {
+      el = document.createElement('div');
+      el.id = 'att-enter-preview';
+      el.className = 'text-[11px] font-bold text-center rounded-lg px-2 py-1.5 border -mt-2 mb-4';
+      const row = inp.closest('div');
+      if (row && row.parentNode) row.parentNode.insertBefore(el, row.nextSibling);
+    }
+    return el;
+  }
+
+  function updatePreview() {
+    const el = ensurePreview();
+    const selEl = document.getElementById('att-m-status');
+    const inp = document.getElementById('att-m-in');
+    if (!el || !selEl || !inp) return;
+    const base = 'text-[11px] font-bold text-center rounded-lg px-2 py-1.5 border -mt-2 mb-4 ';
+    const sel = selEl.value;
+    const a = arrival();
+    const hint = ' · press Enter to save';
+
+    if (sel === 'Sick Leave' || sel === 'Casual Leave' || sel === 'Absent') {
+      el.className = base + 'bg-yellow-50 text-yellow-800 border-yellow-200';
+      el.textContent = sel + ' · no time needed' + hint;
+      return;
+    }
+    if (sel !== 'Auto') {
+      el.className = base + (sel === 'WFH' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-rose-50 text-rose-700 border-rose-200');
+      el.textContent = sel + (a !== null ? ' at ' + fmt12m(a) : '') + hint;
+      return;
+    }
+    if (!inp.value.trim()) {
+      el.className = base + 'bg-slate-50 text-slate-500 border-slate-200';
+      el.textContent = 'Type time like 912 · Enter saves';
+      return;
+    }
+    if (a === null) {
+      el.className = base + 'bg-rose-50 text-rose-700 border-rose-200';
+      el.textContent = 'Invalid time — use 912 or 115';
+      return;
+    }
+    const st = statusFor(a);
+    const skin = st === 'Present' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : st === 'Late' ? 'bg-amber-50 text-amber-800 border-amber-200'
+      : 'bg-rose-50 text-rose-700 border-rose-200';
+    el.className = base + skin;
+    el.textContent = fmt12m(a) + ' · ' + st + hint;
+  }
+
+  window.saveAttRecord = async function () {
+    if (saving) return;
+    if (typeof currentMarkEmpId === 'undefined' || !currentMarkEmpId) return;
+    const sel = document.getElementById('att-m-status').value;
+    const raw = document.getElementById('att-m-in').value;
+    const dateVal = document.getElementById('daily-date-picker').value;
+    let finalStatus = sel, finalTime = null, shown = '';
+
+    if (sel === 'Auto') {
+      const a = arrival();
+      if (a === null) { alert('Invalid time! Please enter a valid time such as 913 or 1305.'); return; }
+      finalStatus = statusFor(a);
+      finalTime = pad(a) + ':00';
+      shown = finalStatus + ' at ' + fmt12m(a);
+    } else if (['Sick Leave', 'Casual Leave', 'Absent'].includes(sel)) {
+      finalTime = null;
+      shown = finalStatus;
+    } else if (raw.trim() !== '') {
+      const a = arrival();
+      if (a === null) { alert('Invalid time format.'); return; }
+      finalTime = pad(a) + ':00';
+      shown = finalStatus + ' at ' + fmt12m(a);
+    } else {
+      shown = finalStatus;
+    }
+
+    const btn = document.querySelector('#att-modal button[onclick="saveAttRecord()"]');
+    const oldText = btn ? btn.textContent : '';
+    saving = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      const res = await fetch(ATT_MARK_URL, {
+        method: 'POST',
+        headers: attAuthHeaders(),
+        body: JSON.stringify({
+          employee_id: parseInt(currentMarkEmpId, 10),
+          date: dateVal,
+          status: finalStatus,
+          check_in: finalTime
+        })
+      });
+      if (res.ok) {
+        document.getElementById('att-modal').classList.add('hidden');
+        if (typeof showStandardToast === 'function') showStandardToast('Saved: ' + shown);
+        await attLoadDay();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Failed to save attendance.');
+      }
+    } catch (e) {
+      alert('Error saving attendance: ' + e.message);
+    } finally {
+      saving = false;
+      if (btn) { btn.disabled = false; btn.textContent = oldText || 'Save'; }
+    }
+  };
+
+  const origOpen = window.openAttModal;
+  if (typeof origOpen === 'function') {
+    window.openAttModal = function (id, name, shift) {
+      origOpen(id, name, shift);
+      const inp = document.getElementById('att-m-in');
+      if (inp) {
+        inp.setAttribute('inputmode', 'numeric');
+        inp.setAttribute('autocomplete', 'off');
+        inp.maxLength = 5;
+      }
+      updatePreview();
+    };
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    if (!t || (t.id !== 'att-m-in' && t.id !== 'att-m-period')) return;
+    const modal = document.getElementById('att-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.saveAttRecord();
+  }, true);
+
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'att-m-in') updatePreview();
+  }, true);
+
+  document.addEventListener('change', function (e) {
+    if (e.target && (e.target.id === 'att-m-period' || e.target.id === 'att-m-status')) updatePreview();
+  }, true);
+})();
+</script>
 
 </body>
 </html>
