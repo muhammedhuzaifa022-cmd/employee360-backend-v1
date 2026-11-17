@@ -6720,7 +6720,172 @@ async function saveAttRecord() {
   }, true);
 })();
 </script>
+<script>
+/* Afternoon shift schedule: 12:00 PM in October only · 1:00 PM all other months */
+(function () {
+  const OCT = '12:00', NORMAL = '13:00';
+  let lastTarget = null, saving = false;
 
+  const selDate = () => {
+    const el = document.getElementById('daily-date-picker');
+    return (el && el.value) || (typeof att !== 'undefined' && att.date) ||
+      (typeof currentDate !== 'undefined' ? currentDate : '');
+  };
+  const targetFor = d => (String(d).slice(5, 7) === '10' ? OCT : NORMAL);
+  const toMin = t => { const p = String(t).split(':').map(Number); return (p[0] || 0) * 60 + (p[1] || 0); };
+  const hhmm = v => String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+  const fmt = t => {
+    const p = String(t).split(':').map(Number), h = p[0] || 0, m = p[1] || 0;
+    return String(h % 12 === 0 ? 12 : h % 12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM');
+  };
+
+  function decorate(target) {
+    const title = document.getElementById('shift-title-afternoon');
+    if (!title) return;
+    title.textContent = 'Afternoon Shift Employees (Start ' + fmt(target) + ')';
+    let pill = document.getElementById('oct-afternoon-pill');
+    if (!pill) {
+      pill = document.createElement('span');
+      pill.id = 'oct-afternoon-pill';
+      pill.className = 'text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full';
+      title.insertAdjacentElement('afterend', pill);
+    }
+    if (target === OCT) {
+      pill.textContent = 'October only · 12:00 PM';
+      pill.classList.remove('hidden');
+    } else {
+      pill.classList.add('hidden');
+    }
+  }
+
+  function apply() {
+    const date = selDate();
+    if (!date) return;
+    const target = targetFor(date);
+    if (typeof att !== 'undefined' && Array.isArray(att.users)) {
+      att.users.forEach(e => {
+        if (!e._baseStart) e._baseStart = e.start || (e.shift === 'afternoon' ? NORMAL : '09:00');
+        const base = String(e._baseStart).slice(0, 5);
+        e.start = (e.shift === 'afternoon' && target === OCT) ? OCT : base;
+      });
+    }
+    try { shiftDefaults.afternoon = target; } catch (err) {}
+    decorate(target);
+    if (lastTarget && lastTarget !== target && typeof showStandardToast === 'function') {
+      showStandardToast('Afternoon shift start: ' + fmt(target) + (target === OCT ? ' (October only)' : ' (regular)'));
+    }
+    lastTarget = target;
+  }
+
+  const prevRender = window.attRender;
+  if (typeof prevRender === 'function') {
+    window.attRender = function () { apply(); prevRender(); apply(); };
+  }
+
+  const prevOpen = window.openAttModal;
+  if (typeof prevOpen === 'function') {
+    window.openAttModal = function (id, name, start) {
+      apply();
+      const emp = (typeof att !== 'undefined' && att.users ? att.users : []).find(e => String(e.id) === String(id));
+      prevOpen(id, name, emp ? emp.start : start);
+      const meta = document.getElementById('att-m-meta');
+      if (meta && emp && emp.shift === 'afternoon' && targetFor(selDate()) === OCT) {
+        meta.textContent = 'Shift Start: ' + fmt(OCT) + ' · October schedule';
+      }
+    };
+  }
+
+  window.saveAttRecord = async function () {
+    if (saving) return;
+    if (typeof currentMarkEmpId === 'undefined' || !currentMarkEmpId) return;
+    const sel = document.getElementById('att-m-status').value;
+    const raw = document.getElementById('att-m-in').value;
+    const period = document.getElementById('att-m-period').value;
+    const dateVal = document.getElementById('daily-date-picker').value;
+    const shiftMin = toMin((typeof currentMarkShiftStart !== 'undefined' && currentMarkShiftStart) || '09:00');
+
+    const arrival = () => {
+      const t = parseTimeInput(raw, period);
+      if (!t) return null;
+      let a = toMin(t);
+      if (a < shiftMin - 240 && a + 720 <= 1439) a += 720;
+      return a;
+    };
+
+    let finalStatus = sel, finalTime = null, shown = '';
+    if (sel === 'Auto') {
+      const a = arrival();
+      if (a === null) { alert('Invalid time! Please enter a valid time such as 913 or 1305.'); return; }
+      const lateBy = a - shiftMin;
+      finalStatus = lateBy <= 5 ? 'Present' : lateBy <= 180 ? 'Late' : 'Half-Day';
+      finalTime = hhmm(a) + ':00';
+      shown = finalStatus + ' at ' + fmt(hhmm(a));
+    } else if (['Sick Leave', 'Casual Leave', 'Absent'].includes(sel)) {
+      finalTime = null; shown = finalStatus;
+    } else if (raw.trim() !== '') {
+      const a = arrival();
+      if (a === null) { alert('Invalid time format.'); return; }
+      finalTime = hhmm(a) + ':00';
+      shown = finalStatus + ' at ' + fmt(hhmm(a));
+    } else { shown = finalStatus; }
+
+    const btn = document.querySelector('#att-modal button[onclick="saveAttRecord()"]');
+    const oldText = btn ? btn.textContent : '';
+    saving = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      const res = await fetch(ATT_MARK_URL, {
+        method: 'POST',
+        headers: attAuthHeaders(),
+        body: JSON.stringify({
+          employee_id: parseInt(currentMarkEmpId, 10),
+          date: dateVal,
+          status: finalStatus,
+          check_in: finalTime
+        })
+      });
+      if (res.ok) {
+        document.getElementById('att-modal').classList.add('hidden');
+        if (typeof showStandardToast === 'function') showStandardToast('Saved: ' + shown);
+        await attLoadDay();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Failed to save attendance.');
+      }
+    } catch (e) {
+      alert('Error saving attendance: ' + e.message);
+    } finally {
+      saving = false;
+      if (btn) { btn.disabled = false; btn.textContent = oldText || 'Save'; }
+    }
+  };
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    if (!t || (t.id !== 'att-m-in' && t.id !== 'att-m-period')) return;
+    const modal = document.getElementById('att-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    e.preventDefault(); e.stopPropagation();
+    window.saveAttRecord();
+  }, true);
+
+  document.addEventListener('change', function (e) {
+    const id = e.target && e.target.id;
+    if (id === 'daily-date-picker' || id === 'quick-month-jump') { apply(); setTimeout(apply, 0); }
+  }, true);
+
+  document.addEventListener('click', function (e) {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest('#tab-daily') || t.closest('[onclick^="navigateDate"]') || t.closest('#shift-tab-afternoon')) {
+      setTimeout(apply, 60);
+    }
+  }, true);
+
+  setTimeout(apply, 500);
+})();
+</script>
 </body>
 </html>
 
