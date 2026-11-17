@@ -6886,6 +6886,580 @@ async function saveAttRecord() {
   setTimeout(apply, 500);
 })();
 </script>
+
+
+<script>
+/* ===== Company Holiday Calendar 2026–2027 · weekend-overlap aware ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = j => { const h = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }; if (j) h['Content-Type'] = 'application/json'; return h; };
+  const LS = 'e360-holiday-calendar-v1';
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const BUILT = {
+    '2026': [
+      ['2026-01-01', "New Year's Day"], ['2026-01-14', 'Makar Sankranti'], ['2026-01-26', 'Republic Day'],
+      ['2026-03-20', ''], ['2026-05-27', ''], ['2026-08-10', ''],
+      ['2026-08-15', 'Independence Day'], ['2026-09-25', ''],
+      ['2026-10-02', 'Gandhi Jayanti'], ['2026-10-21', 'Dussehra'], ['2026-11-09', 'Diwali'], ['2026-12-25', 'Christmas']
+    ],
+    '2027': [
+      ['2027-01-01', "New Year's Day"], ['2027-01-14', 'Makar Sankranti'], ['2027-01-26', 'Republic Day'],
+      ['2027-03-10', 'Holi'], ['2027-05-17', 'Buddha Purnima'], ['2027-08-15', 'Independence Day'],
+      ['2027-09-14', 'Milad-un-Nabi'], ['2027-10-02', 'Gandhi Jayanti'], ['2027-10-11', 'Dussehra'],
+      ['2027-10-29', 'Diwali'], ['2027-12-25', 'Christmas']
+    ]
+  };
+
+  let state = { names: {}, extra: [], removed: [] };
+  try { const s = JSON.parse(localStorage.getItem(LS)); if (s) state = Object.assign(state, s); } catch (e) {}
+  const persist = () => { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} };
+  let dbRows = [], year = String(new Date().getFullYear()), q = '', onlyOverlap = false, mFilter = 0, editing = null;
+
+  const dowOf = d => new Date(d + 'T00:00:00').getDay();
+  const isWk = d => { const w = dowOf(d); return w === 0 || w === 6; };
+  const years = () => [...new Set([...Object.keys(BUILT), ...state.extra.map(x => x.date.slice(0, 4)), ...dbRows.map(h => String(h.date).slice(0, 4))])].sort();
+
+  function rawFor(y) {
+    const map = new Map();
+    (BUILT[y] || []).forEach(([d, n]) => { if (!state.removed.includes(d)) map.set(d, { date: d, name: n, source: 'company' }); });
+    state.extra.filter(x => x.date.slice(0, 4) === y).forEach(x => map.set(x.date, { date: x.date, name: x.name, source: 'local' }));
+    dbRows.filter(h => String(h.date).slice(0, 4) === y).forEach(h => map.set(String(h.date), { date: String(h.date), name: h.name, source: 'db', dbId: h.id }));
+    return [...map.values()].sort((a, b) => a.date < b.date ? -1 : 1).map(e => {
+      const nm = state.names[e.date] || e.name || '';
+      return Object.assign(e, { label: nm || 'Company Holiday', unnamed: !nm, weekend: isWk(e.date), dow: dowOf(e.date) });
+    });
+  }
+  function nameFor(d) {
+    if (state.names[d]) return state.names[d];
+    const db = dbRows.find(h => String(h.date) === d); if (db) return db.name || 'Company Holiday';
+    const ex = state.extra.find(x => x.date === d); if (ex) return ex.name || 'Company Holiday';
+    if (state.removed.includes(d)) return null;
+    const b = (BUILT[d.slice(0, 4)] || []).find(x => x[0] === d);
+    return b ? (b[1] || 'Company Holiday') : null;
+  }
+  function syncCompany() {
+    const out = {};
+    years().forEach(y => { out[y] = {}; rawFor(y).forEach(e => { out[y][e.date] = e.label; }); });
+    try { companyHolidays = out; } catch (e) {}
+    try { globalHolidays = dbRows.map(h => String(h.date)); } catch (e) {}
+  }
+
+  window.getDayType = function (dateStr) {
+    const w = dowOf(dateStr), weekend = w === 0 || w === 6, nm = nameFor(dateStr);
+    if (nm) return { isHoliday: true, name: nm, isWeekend: weekend, overlaps: weekend };
+    if (weekend) return { isHoliday: true, name: w === 0 ? 'Sunday' : 'Saturday', isWeekend: true, overlaps: false };
+    return { isHoliday: false, name: null, isWeekend: false, overlaps: false };
+  };
+
+  function stats(y) {
+    const list = rawFor(y);
+    const n = new Date(+y, 1, 29).getMonth() === 1 ? 366 : 365;
+    let wk = 0;
+    for (let i = 0; i < n; i++) { const w = new Date(+y, 0, i + 1).getDay(); if (w === 0 || w === 6) wk++; }
+    const ov = list.filter(e => e.weekend).length;
+    return { total: list.length, overlap: ov, extra: list.length - ov, weekendDays: wk, off: wk + list.length - ov, working: n - wk - (list.length - ov) };
+  }
+
+  async function pullDb() {
+    try {
+      const r = await fetch(API + '/holidays/', { headers: HDR() });
+      if (r.ok) { const d = await r.json(); dbRows = Array.isArray(d) ? d : []; }
+    } catch (e) {}
+    syncCompany();
+  }
+
+  const say = m => { if (typeof showStandardToast === 'function') showStandardToast(m); };
+  const unlockedMap = () => { try { return JSON.parse(localStorage.getItem('e360-workday-unlocks')) || {}; } catch (e) { return {}; } };
+
+  function paintChips() {
+    const p = document.getElementById('daily-date-picker'); if (!p || !p.value || typeof att === 'undefined') return;
+    const date = p.value, info = getDayType(date), off = info.isHoliday && !unlockedMap()[date];
+    const recs = (att.records && att.records[date]) || {};
+    const c = { present: 0, late: 0, halfday: 0, leave: 0, holiday: 0, unmarked: 0 }; let absent = 0;
+    (att.users || []).forEach(e => {
+      if (off) { c.holiday++; return; }
+      const s = recs[e.id] && recs[e.id].status;
+      if (s === 'Present' || s === 'WFH') c.present++;
+      else if (s === 'Late') c.late++;
+      else if (s === 'Half-Day') c.halfday++;
+      else if (s && s.indexOf('Leave') > -1) c.leave++;
+      else if (s === 'Absent') { absent++; c.unmarked++; }
+      else c.unmarked++;
+    });
+    Object.keys(c).forEach(k => { const el = document.getElementById('chip-' + k); if (el) el.textContent = c[k]; });
+    const u = document.getElementById('chip-unmarked');
+    if (u) u.title = absent ? (c.unmarked - absent) + ' unmarked · ' + absent + ' absent' : 'No attendance marked yet';
+  }
+
+  function refreshViews() {
+    if (typeof attRender === 'function') attRender();
+    paintChips();
+    try {
+      if (activeTab === 'monthly' && typeof renderMonthlyView === 'function') renderMonthlyView(false);
+      if (activeTab === 'yearly' && typeof renderYearlyView === 'function') renderYearlyView();
+    } catch (e) {}
+  }
+
+  /* ---------- Manager UI ---------- */
+  function shell() {
+    const m = document.getElementById('holiday-modal'); if (!m) return;
+    m.innerHTML = `
+<div class="bg-white w-full max-w-6xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+  <div class="px-6 py-4 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <h3 class="text-base font-bold tracking-tight">Company Holiday Calendar</h3>
+      <p class="text-[11px] text-violet-100 font-medium mt-0.5">Saturdays and Sundays are already off — a holiday on a weekend is counted once.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <div id="hol-years" class="flex bg-white/15 p-1 rounded-xl"></div>
+      <button onclick="closeHolidayModal()" class="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/30 text-white font-bold transition-colors">&times;</button>
+    </div>
+  </div>
+  <div id="hol-stats" class="grid grid-cols-2 sm:grid-cols-5 gap-3 px-6 py-4 bg-slate-50 border-b border-slate-200"></div>
+  <div class="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px]">
+    <div class="p-5 overflow-y-auto hol-scroll border-b lg:border-b-0 lg:border-r border-slate-200">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Year at a glance · click a holiday to open that day</span>
+        <span class="flex items-center gap-3 text-[10px] font-semibold text-slate-500">
+          <span class="flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block"></i>Holiday</span>
+          <span class="flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></i>On weekend</span>
+          <span class="flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-sm bg-slate-200 inline-block"></i>Weekend</span>
+        </span>
+      </div>
+      <div id="hol-strip" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+    </div>
+    <div class="flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-200 space-y-3">
+        <div class="flex gap-2">
+          <input id="hol-q" type="text" placeholder="Search holiday or date..." class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+          <button id="hol-ov" class="px-3 py-2 rounded-xl text-[11px] font-bold border transition-colors"></button>
+        </div>
+        <div class="flex gap-2 items-end">
+          <div class="flex-1"><label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Add holiday</label>
+            <input id="new-hol-date" type="date" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs"></div>
+          <div class="flex-1"><label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Name</label>
+            <input id="new-hol-name" type="text" placeholder="e.g. Founders Day" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs"></div>
+          <button id="hol-add" class="bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors">Add</button>
+        </div>
+      </div>
+      <div id="hol-list" class="flex-1 overflow-y-auto hol-scroll px-4 py-3"></div>
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+        <button id="hol-export" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-colors">⬇ Export ${'${year}'}</button>
+        <button onclick="closeHolidayModal()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors">Done</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+    document.getElementById('hol-q').oninput = e => { q = e.target.value.toLowerCase().trim(); paintList(); };
+    document.getElementById('hol-ov').onclick = () => { onlyOverlap = !onlyOverlap; paint(); };
+    document.getElementById('hol-add').onclick = holAdd;
+    document.getElementById('hol-export').onclick = holExport;
+    document.getElementById('new-hol-name').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); holAdd(); } };
+  }
+
+  function paint() {
+    const yb = document.getElementById('hol-years');
+    if (yb) yb.innerHTML = years().map(y => `<button data-y="${y}" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${y === year ? 'bg-white text-violet-700 shadow-sm' : 'text-white/80 hover:text-white'}">${y}</button>`).join('');
+    if (yb) [...yb.children].forEach(b => b.onclick = () => { year = b.dataset.y; mFilter = 0; paint(); });
+
+    const s = stats(year), st = document.getElementById('hol-stats');
+    if (st) st.innerHTML = [
+      ['Holidays', s.total, 'text-violet-700', 'bg-violet-50 border-violet-200'],
+      ['Extra days off', s.extra, 'text-emerald-700', 'bg-emerald-50 border-emerald-200'],
+      ['Fall on weekend', s.overlap, 'text-amber-700', 'bg-amber-50 border-amber-300'],
+      ['Total non-working', s.off, 'text-slate-800', 'bg-white border-slate-200'],
+      ['Working days', s.working, 'text-indigo-700', 'bg-indigo-50 border-indigo-200']
+    ].map(([k, v, c, b]) => `<div class="${b} border rounded-xl px-3 py-2.5"><div class="text-[10px] font-bold uppercase tracking-wide text-slate-500">${k}</div><div class="text-xl font-bold ${c} mt-0.5">${v}</div></div>`).join('');
+
+    const ov = document.getElementById('hol-ov');
+    if (ov) { ov.textContent = onlyOverlap ? 'Showing overlaps' : 'Only overlaps'; ov.className = 'px-3 py-2 rounded-xl text-[11px] font-bold border transition-colors ' + (onlyOverlap ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-slate-500 border-slate-300 hover:border-amber-300'); }
+    const ex = document.getElementById('hol-export'); if (ex) ex.textContent = '⬇ Export ' + year;
+    paintStrip(); paintList();
+  }
+
+  function paintStrip() {
+    const box = document.getElementById('hol-strip'); if (!box) return;
+    const list = rawFor(year), byDate = {}; list.forEach(e => byDate[e.date] = e);
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    let html = '';
+    for (let m = 0; m < 12; m++) {
+      const dim = new Date(+year, m + 1, 0).getDate(), lead = new Date(+year, m, 1).getDay();
+      const cnt = list.filter(e => +e.date.slice(5, 7) === m + 1).length;
+      html += `<div class="border rounded-xl p-2.5 ${mFilter === m + 1 ? 'border-violet-400 bg-violet-50/40' : 'border-slate-200 bg-white'}">
+        <button data-m="${m + 1}" class="w-full flex items-center justify-between mb-1.5 group">
+          <span class="text-[11px] font-bold text-slate-700 group-hover:text-violet-700">${MON[m].slice(0, 3)}</span>
+          <span class="text-[9px] font-bold px-1.5 rounded-full ${cnt ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-400'}">${cnt}</span>
+        </button>
+        <div class="grid grid-cols-7 gap-[2px]">`;
+      for (let i = 0; i < lead; i++) html += '<span></span>';
+      for (let d = 1; d <= dim; d++) {
+        const ds = `${year}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const e = byDate[ds], wk = isWk(ds);
+        const cls = e ? (e.weekend ? 'bg-amber-400 text-amber-950' : 'bg-violet-500 text-white') : (wk ? 'bg-slate-200 text-slate-500' : 'text-slate-400');
+        html += `<button ${e ? `data-jump="${ds}"` : 'disabled'} title="${ds}${e ? ' · ' + e.label : ''}" class="h-[15px] rounded-[3px] text-[8px] font-bold leading-[15px] ${cls} ${ds === todayStr ? 'ring-1 ring-indigo-500' : ''} ${e ? 'hover:scale-125 transition-transform cursor-pointer' : 'cursor-default'}">${d}</button>`;
+      }
+      html += '</div></div>';
+    }
+    box.innerHTML = html;
+    box.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mFilter = mFilter === +b.dataset.m ? 0 : +b.dataset.m; paint(); });
+    box.querySelectorAll('[data-jump]').forEach(b => b.onclick = () => jump(b.dataset.jump));
+  }
+
+  function paintList() {
+    const box = document.getElementById('hol-list'); if (!box) return;
+    let list = rawFor(year);
+    if (mFilter) list = list.filter(e => +e.date.slice(5, 7) === mFilter);
+    if (onlyOverlap) list = list.filter(e => e.weekend);
+    if (q) list = list.filter(e => (e.label + ' ' + e.date + ' ' + DOW[e.dow]).toLowerCase().includes(q));
+    if (!list.length) { box.innerHTML = '<div class="text-center py-10 text-sm text-slate-400 font-medium">No holidays match this view.</div>'; return; }
+    let html = '', lastM = -1;
+    list.forEach(e => {
+      const m = +e.date.slice(5, 7) - 1;
+      if (m !== lastM) { html += `<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-3 mb-1.5 first:mt-0">${MON[m]}</div>`; lastM = m; }
+      const src = e.source === 'db' ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">Database</span>'
+        : e.source === 'local' ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Added by you</span>' : '';
+      const nameHtml = editing === e.date
+        ? `<input data-edit="${e.date}" value="${esc(state.names[e.date] || e.name || '')}" placeholder="Holiday name" class="w-full bg-white border border-violet-400 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none">`
+        : `<button data-rename="${e.date}" class="text-left text-sm font-semibold text-slate-800 hover:text-violet-700 transition-colors">${esc(e.label)}${e.unnamed ? '<span class="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 align-middle">Name not set</span>' : ''}</button>`;
+      html += `<div class="flex items-center gap-3 py-2 px-2 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors">
+        <div class="w-11 flex-none text-center rounded-lg py-1 ${e.weekend ? 'bg-amber-100' : 'bg-violet-100'}">
+          <div class="text-sm font-bold ${e.weekend ? 'text-amber-800' : 'text-violet-700'} leading-none">${+e.date.slice(8)}</div>
+          <div class="text-[9px] font-bold ${e.weekend ? 'text-amber-700' : 'text-violet-600'} mt-0.5">${DOW[e.dow]}</div>
+        </div>
+        <div class="flex-1 min-w-0">
+          ${nameHtml}
+          <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <span class="text-[10px] text-slate-400 font-medium">${e.date}</span>${src}
+            ${e.weekend ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Already a weekend · no extra day</span>' : '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Extra day off</span>'}
+          </div>
+        </div>
+        <button data-del="${e.date}" data-src="${e.source}" data-id="${e.dbId || ''}" class="flex-none text-rose-500 hover:text-white hover:bg-rose-500 w-7 h-7 rounded-lg text-xs font-bold transition-colors">✕</button>
+      </div>`;
+    });
+    box.innerHTML = html;
+    box.querySelectorAll('[data-rename]').forEach(b => b.onclick = () => { editing = b.dataset.rename; paintList(); const i = box.querySelector('[data-edit]'); if (i) { i.focus(); i.select(); } });
+    box.querySelectorAll('[data-edit]').forEach(i => {
+      const save = () => { const v = i.value.trim(); if (v) state.names[i.dataset.edit] = v; else delete state.names[i.dataset.edit]; editing = null; persist(); syncCompany(); paint(); refreshViews(); };
+      i.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); save(); } if (ev.key === 'Escape') { editing = null; paintList(); } };
+      i.onblur = save;
+    });
+    box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => holDelete(b.dataset.del, b.dataset.src, b.dataset.id));
+  }
+
+  async function holAdd() {
+    const d = document.getElementById('new-hol-date'), n = document.getElementById('new-hol-name');
+    if (!d || !d.value) { say('Pick a date for the holiday.'); return; }
+    const date = d.value, name = (n.value || '').trim() || 'Company Holiday';
+    let saved = false;
+    try { const r = await fetch(API + '/holidays/', { method: 'POST', headers: HDR(true), body: JSON.stringify({ date, name }) }); saved = r.ok; } catch (e) {}
+    if (saved) { await pullDb(); say('Holiday added and saved to the server.'); }
+    else { state.extra = state.extra.filter(x => x.date !== date); state.extra.push({ date, name }); state.removed = state.removed.filter(x => x !== date); persist(); syncCompany(); say('Holiday saved on this device (server unavailable).'); }
+    d.value = ''; n.value = ''; year = date.slice(0, 4); paint(); refreshViews();
+  }
+
+  async function holDelete(date, src, id) {
+    if (src === 'db' && id) {
+      try { await fetch(API + '/holidays/' + id, { method: 'DELETE', headers: HDR() }); } catch (e) {}
+      await pullDb();
+    } else if (src === 'local') {
+      state.extra = state.extra.filter(x => x.date !== date); persist();
+    } else {
+      if (!state.removed.includes(date)) state.removed.push(date); persist();
+    }
+    delete state.names[date]; persist(); syncCompany(); paint(); refreshViews();
+    say('Removed ' + date + ' from the holiday calendar.');
+  }
+
+  function jump(date) {
+    const p = document.getElementById('daily-date-picker');
+    if (p) p.value = date;
+    if (typeof switchTab === 'function') switchTab('daily');
+    if (typeof handleDateChange === 'function') handleDateChange(date);
+    if (typeof closeHolidayModal === 'function') closeHolidayModal();
+    say('Opened ' + date + ' · ' + (nameFor(date) || DOW[dowOf(date)]));
+  }
+
+  function holExport() {
+    if (typeof XLSX === 'undefined') { say('Excel library not loaded.'); return; }
+    const s = stats(year), list = rawFor(year);
+    const data = [
+      [`Employee360 — Company Holiday Calendar ${year}`],
+      [`${s.total} holidays · ${s.extra} extra days off · ${s.overlap} fall on a weekend · ${s.off} total non-working days · ${s.working} working days`], [],
+      ['Date', 'Day', 'Holiday', 'Falls on weekend', 'Counts as extra day off', 'Source']
+    ];
+    list.forEach(e => data.push([e.date, DOW[e.dow], e.label, e.weekend ? 'Yes' : 'No', e.weekend ? 'No' : 'Yes', e.source === 'db' ? 'Database' : e.source === 'local' ? 'Added locally' : 'Company calendar']));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Holidays ' + year);
+    XLSX.writeFile(wb, `Company_Holidays_${year}.xlsx`);
+    say('Holiday calendar ' + year + ' exported.');
+  }
+
+  function open() {
+    document.querySelectorAll('#holiday-modal').forEach((el, i) => { if (i > 0) el.remove(); });
+    const p = document.getElementById('daily-date-picker');
+    if (p && p.value) year = p.value.slice(0, 4);
+    if (!years().includes(year)) year = years()[0];
+    shell(); paint();
+    document.getElementById('holiday-modal').classList.remove('hidden');
+    pullDb().then(() => { syncCompany(); paint(); });
+  }
+
+  window.openHolidayModal = open;
+  window.openHolidayManagerModal = open;
+  window.loadHolidays = async function () { await pullDb(); syncCompany(); if (document.getElementById('hol-list')) paint(); refreshViews(); };
+
+  const prevRender = window.attRender;
+  if (typeof prevRender === 'function') window.attRender = function () { const r = prevRender.apply(this, arguments); paintChips(); return r; };
+  const prevInit = window.attInit;
+  if (typeof prevInit === 'function') {
+    window.attInit = async function () { const r = await prevInit.apply(this, arguments); await pullDb(); refreshViews(); return r; };
+  }
+
+  const st = document.createElement('style');
+  st.textContent = '.hol-scroll::-webkit-scrollbar{width:10px;height:10px}.hol-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}.hol-scroll::-webkit-scrollbar-thumb{background:#c4b5fd;border-radius:99px;border:2px solid #f1f5f9;background-clip:content-box}.hol-scroll::-webkit-scrollbar-thumb:hover{background:#8b5cf6;background-clip:content-box}.hol-scroll{scrollbar-width:thin;scrollbar-color:#c4b5fd #f1f5f9}';
+  document.head.appendChild(st);
+
+  syncCompany();
+  setTimeout(() => { pullDb().then(() => { if (typeof attRender === 'function') attRender(); }); }, 900);
+})();
+</script>
+
+<script>
+/* ===== Check-in time: live on every daily row, in the mark popup, and in monthly detail ===== */
+(function () {
+  const UK = 'e360-workday-unlocks';
+  const pad = n => String(n).padStart(2, '0');
+  const hhmm = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const toMin = v => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (!s || s === '-') return null;
+    const p = s.split(':'), h = parseInt(p[0], 10), mi = parseInt(p[1] || '0', 10);
+    return (Number.isFinite(h) && Number.isFinite(mi)) ? h * 60 + mi : null;
+  };
+  const fmt12 = m => m == null ? null : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
+  const dur = m => m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const selDate = () => {
+    const p = document.getElementById('daily-date-picker');
+    return (p && p.value) || A().date || (typeof currentDate !== 'undefined' ? currentDate : '');
+  };
+  const recFor = (d, id) => { const r = (A().records && A().records[d]) || {}; return r[id] || r[String(id)] || null; };
+  const inOf = r => r ? toMin(r.check_in != null ? r.check_in : r.checkIn) : null;
+  const outOf = r => r ? toMin(r.check_out != null ? r.check_out : r.checkOut) : null;
+  const shiftOf = e => { const v = toMin(e && e.start); return v == null ? 540 : v; };
+  const empOf = id => (A().users || []).find(e => String(e.id) === String(id)) || null;
+  const isLocked = d => { try { const i = getDayType(d); return !!i.isHoliday && !unlocks()[d]; } catch (e) { return false; } };
+
+  const TONE = {
+    Present: ['bg-emerald-50', 'border-emerald-200', 'text-emerald-600', 'text-emerald-800', 'text-emerald-500'],
+    Late: ['bg-amber-50', 'border-amber-200', 'text-amber-600', 'text-amber-800', 'text-amber-500'],
+    'Half-Day': ['bg-rose-50', 'border-rose-200', 'text-rose-500', 'text-rose-800', 'text-rose-400'],
+    WFH: ['bg-indigo-50', 'border-indigo-200', 'text-indigo-500', 'text-indigo-800', 'text-indigo-400'],
+    'Sick Leave': ['bg-yellow-50', 'border-yellow-200', 'text-yellow-600', 'text-yellow-800', 'text-yellow-500'],
+    'Casual Leave': ['bg-yellow-50', 'border-yellow-200', 'text-yellow-600', 'text-yellow-800', 'text-yellow-500'],
+    Absent: ['bg-red-50', 'border-red-200', 'text-red-500', 'text-red-700', 'text-red-400'],
+    Holiday: ['bg-purple-50', 'border-purple-200', 'text-purple-500', 'text-purple-700', 'text-purple-400'],
+    Unmarked: ['bg-slate-50', 'border-slate-200', 'text-slate-400', 'text-slate-500', 'text-slate-300']
+  };
+  const tone = s => TONE[s] || TONE.Unmarked;
+
+  function chipFor(arr, sh, status) {
+    if (arr == null) return null;
+    const d = arr - sh;
+    if (status === 'WFH') return { t: d > 0 ? '+' + dur(d) : 'On time', c: 'bg-indigo-100 text-indigo-700' };
+    if (d < 0) return { t: dur(-d) + ' early', c: 'bg-emerald-100 text-emerald-700' };
+    if (d <= 5) return { t: d === 0 ? 'On time' : 'On time · +' + d + 'm', c: 'bg-emerald-100 text-emerald-700' };
+    if (d <= 180) return { t: '+' + dur(d) + ' late', c: 'bg-amber-100 text-amber-800' };
+    return { t: '+' + dur(d) + ' late', c: 'bg-rose-100 text-rose-700' };
+  }
+
+  const CLOCK = '<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>';
+
+  function buildCell(emp, date, locked) {
+    const rec = recFor(date, emp.id);
+    const status = locked ? 'Holiday' : ((rec && rec.status) || 'Unmarked');
+    const [bg, bd, k, v, ic] = tone(status);
+    const arr = locked ? null : inOf(rec);
+    const out = locked ? null : outOf(rec);
+    const noTime = ['Sick Leave', 'Casual Leave', 'Absent'].indexOf(status) > -1;
+    const main = locked ? 'Day off' : (arr != null ? fmt12(arr) : (noTime ? 'No check-in' : '— : —'));
+    const chip = locked ? { t: 'Off', c: 'bg-purple-100 text-purple-700' }
+      : (arr != null ? chipFor(arr, shiftOf(emp), status)
+        : (noTime ? { t: status, c: status === 'Absent' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-800' }
+          : { t: 'Not marked', c: 'bg-slate-100 text-slate-500' }));
+
+    const el = document.createElement('div');
+    el.className = 'att-time-cell flex items-center gap-2 rounded-xl border px-2.5 py-1.5 transition-shadow hover:shadow-sm ' + bg + ' ' + bd;
+    el.innerHTML =
+      '<span class="' + ic + '">' + CLOCK + '</span>' +
+      '<span class="leading-tight">' +
+        '<span class="block text-[9px] font-bold uppercase tracking-wider ' + k + '">Check-in</span>' +
+        '<span class="block text-[13px] font-extrabold tabular-nums ' + v + '">' + main +
+          (out != null ? '<span class="font-semibold text-[11px] opacity-70"> → ' + fmt12(out) + '</span>' : '') +
+        '</span>' +
+      '</span>' +
+      (chip ? '<span class="ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ' + chip.c + '">' + chip.t + '</span>' : '');
+    if (!locked) {
+      el.style.cursor = 'pointer';
+      el.title = 'Click to edit check-in time';
+      el.onclick = () => window.openAttModal(String(emp.id), emp.name, emp.start);
+    }
+    return el;
+  }
+
+  function decorate() {
+    const date = selDate(); if (!date) return;
+    const locked = isLocked(date);
+    const groups = { morning: [], afternoon: [], exceptions: [] };
+    (A().users || []).forEach(e => { groups[e.shift === 'morning' || e.shift === 'afternoon' ? e.shift : 'exceptions'].push(e); });
+    ['morning', 'afternoon', 'exceptions'].forEach(k => {
+      const list = document.getElementById('list-' + k); if (!list) return;
+      Array.prototype.forEach.call(list.children, (row, i) => {
+        if (!row || row.children.length < 2) return;
+        const btn = row.querySelector('button[onclick^="openAttModal"]');
+        let emp = null;
+        if (btn) { const m = /openAttModal\('([^']+)'/.exec(btn.getAttribute('onclick') || ''); if (m) emp = empOf(m[1]); }
+        if (!emp) emp = groups[k][i];
+        if (!emp) return;
+        row.classList.add('flex-wrap', 'gap-2');
+        const old = row.querySelector('.att-time-cell'); if (old) old.remove();
+        row.insertBefore(buildCell(emp, date, locked), row.lastElementChild);
+        const meta = row.querySelector('div.text-xs.text-slate-500');
+        if (meta && /Shift Start/i.test(meta.textContent)) meta.textContent = 'Shift Start: ' + fmt12(shiftOf(emp));
+      });
+    });
+  }
+
+  function resolve(raw, period, sh) {
+    if (typeof parseTimeInput !== 'function') return null;
+    const t = parseTimeInput(raw || '', period);
+    if (!t) return null;
+    let a = toMin(t);
+    if (a < sh - 240 && a + 720 <= 1439) a += 720;
+    return a;
+  }
+
+  function preview() {
+    const inp = document.getElementById('att-m-in'), per = document.getElementById('att-m-period'), st = document.getElementById('att-m-status');
+    if (!inp || !per || !st) return;
+    let el = document.getElementById('att-enter-preview');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'att-enter-preview';
+      const row = inp.closest('div');
+      if (row && row.parentNode) row.parentNode.insertBefore(el, row.nextSibling);
+    }
+    const emp = empOf(typeof currentMarkEmpId !== 'undefined' ? currentMarkEmpId : null);
+    const sh = emp ? shiftOf(emp) : (toMin(typeof currentMarkShiftStart !== 'undefined' ? currentMarkShiftStart : null) || 540);
+    const base = 'rounded-xl border px-3 py-2 -mt-2 mb-4 flex items-center justify-between gap-2 ';
+    const sel = st.value;
+
+    if (['Sick Leave', 'Casual Leave', 'Absent'].indexOf(sel) > -1) {
+      el.className = base + 'bg-yellow-50 border-yellow-200';
+      el.innerHTML = '<span class="text-[11px] font-bold text-yellow-800">' + sel + ' · no check-in time saved</span><span class="text-[10px] font-bold text-yellow-700">Enter to save</span>';
+      return;
+    }
+    const arr = resolve(inp.value, per.value, sh);
+    if (!inp.value.trim()) {
+      const rec = recFor(selDate(), emp && emp.id);
+      const cur = inOf(rec);
+      el.className = base + 'bg-slate-50 border-slate-200';
+      el.innerHTML = '<span class="text-[11px] font-semibold text-slate-500">' + (cur != null ? 'Saved check-in <b class="text-slate-700 tabular-nums">' + fmt12(cur) + '</b> · type a new time to change' : 'Type <b>912</b> for 09:12 AM') + '</span><span class="text-[10px] font-bold text-slate-400">Enter to save</span>';
+      return;
+    }
+    if (arr == null) {
+      el.className = base + 'bg-rose-50 border-rose-200';
+      el.innerHTML = '<span class="text-[11px] font-bold text-rose-700">Invalid time — use 912 or 115</span>';
+      return;
+    }
+    const status = sel === 'Auto' ? (arr - sh <= 5 ? 'Present' : arr - sh <= 180 ? 'Late' : 'Half-Day') : sel;
+    const [bg, bd, k, v] = tone(status);
+    const chip = chipFor(arr, sh, status);
+    el.className = base + bg + ' ' + bd;
+    el.innerHTML =
+      '<span class="leading-tight"><span class="block text-[9px] font-bold uppercase tracking-wider ' + k + '">Check-in will be</span>' +
+      '<span class="block text-base font-extrabold tabular-nums ' + v + '">' + fmt12(arr) + '</span></span>' +
+      '<span class="flex items-center gap-1.5">' +
+        (chip ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ' + chip.c + '">' + chip.t + '</span>' : '') +
+        '<span class="text-[10px] font-bold ' + k + '">' + status + ' · Enter</span>' +
+      '</span>';
+  }
+
+  function popupMeta() {
+    const meta = document.getElementById('att-m-meta');
+    const id = typeof currentMarkEmpId !== 'undefined' ? currentMarkEmpId : null;
+    if (!meta || !id) return;
+    const emp = empOf(id), rec = recFor(selDate(), id);
+    const arr = inOf(rec), out = outOf(rec);
+    const sh = emp ? shiftOf(emp) : (toMin(currentMarkShiftStart) || 540);
+    meta.innerHTML = 'Shift <b class="text-slate-700 tabular-nums">' + fmt12(sh) + '</b>' +
+      (arr != null
+        ? ' · Check-in <b class="text-indigo-700 tabular-nums">' + fmt12(arr) + '</b>' + (out != null ? ' · Out <b class="text-slate-700 tabular-nums">' + fmt12(out) + '</b>' : '')
+        : ' · <span class="text-slate-400">no check-in yet</span>');
+    preview();
+  }
+
+  const prevRender = window.attRender;
+  if (typeof prevRender === 'function') window.attRender = function () { const r = prevRender.apply(this, arguments); decorate(); return r; };
+
+  const prevOpen = window.openAttModal;
+  if (typeof prevOpen === 'function') window.openAttModal = function () { const r = prevOpen.apply(this, arguments); popupMeta(); return r; };
+
+  const prevSave = window.saveAttRecord;
+  if (typeof prevSave === 'function') {
+    window.saveAttRecord = async function () {
+      const date = selDate(), id = typeof currentMarkEmpId !== 'undefined' ? currentMarkEmpId : null;
+      const st = document.getElementById('att-m-status'), inp = document.getElementById('att-m-in'), per = document.getElementById('att-m-period');
+      const sel = st ? st.value : 'Auto';
+      const emp = empOf(id), sh = emp ? shiftOf(emp) : 540;
+      const arr = (inp && per) ? resolve(inp.value, per.value, sh) : null;
+      const r = await prevSave.apply(this, arguments);
+      if (id && arr != null && !isLocked(date) && ['Auto', 'WFH', 'Half-Day'].indexOf(sel) > -1) {
+        const day = A().records[date] = A().records[date] || {};
+        const rec = day[id] = day[id] || {};
+        if (inOf(rec) == null) rec.check_in = hhmm(arr) + ':00';
+        if (!rec.status) rec.status = sel === 'Auto' ? (arr - sh <= 5 ? 'Present' : arr - sh <= 180 ? 'Late' : 'Half-Day') : sel;
+        if (typeof attRender === 'function') attRender();
+      }
+      return r;
+    };
+  }
+
+  const prevCell = window.getMonthlyCellStatus;
+  if (typeof prevCell === 'function') {
+    window.getMonthlyCellStatus = function (emp, dateStr) {
+      const cell = prevCell.apply(this, arguments);
+      if (!cell) return cell;
+      const rec = recFor(dateStr, emp && emp.id);
+      const t = inOf(rec), o = outOf(rec);
+      if ((!cell.checkIn || cell.checkIn === '-') && t != null) cell.checkIn = hhmm(t);
+      if ((!cell.checkOut || cell.checkOut === '-') && o != null) cell.checkOut = hhmm(o);
+      return cell;
+    };
+  }
+
+  const prevTab = window.switchTab;
+  if (typeof prevTab === 'function') window.switchTab = function (t) { const r = prevTab.apply(this, arguments); if (t === 'daily') setTimeout(decorate, 40); return r; };
+
+  document.addEventListener('input', e => { if (e.target && e.target.id === 'att-m-in') preview(); }, true);
+  document.addEventListener('change', e => { if (e.target && (e.target.id === 'att-m-period' || e.target.id === 'att-m-status')) preview(); }, true);
+
+  const st = document.createElement('style');
+  st.textContent = '#list-morning,#list-afternoon,#list-exceptions{scrollbar-width:thin;scrollbar-color:#c7d2fe #f8fafc}' +
+    '#list-morning::-webkit-scrollbar,#list-afternoon::-webkit-scrollbar,#list-exceptions::-webkit-scrollbar{height:8px;width:8px}' +
+    '#list-morning::-webkit-scrollbar-track,#list-afternoon::-webkit-scrollbar-track,#list-exceptions::-webkit-scrollbar-track{background:#f8fafc;border-radius:99px}' +
+    '#list-morning::-webkit-scrollbar-thumb,#list-afternoon::-webkit-scrollbar-thumb,#list-exceptions::-webkit-scrollbar-thumb{background:#c7d2fe;border-radius:99px}' +
+    '#list-morning::-webkit-scrollbar-thumb:hover,#list-afternoon::-webkit-scrollbar-thumb:hover,#list-exceptions::-webkit-scrollbar-thumb:hover{background:#818cf8}' +
+    '.att-time-cell{animation:attIn .22s cubic-bezier(.32,.72,.35,1) both}@keyframes attIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}';
+  document.head.appendChild(st);
+
+  setTimeout(decorate, 700);
+})();
+</script>
 </body>
 </html>
 
