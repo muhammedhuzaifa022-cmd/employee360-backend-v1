@@ -7797,6 +7797,971 @@ async function saveAttRecord() {
   setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'monthly') window.renderMonthlyView(); } catch (e) {} }, 800);
 })();
 </script>
+<script>
+/* ===== Monthly Report v2 — shift filters + per-employee shift times ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = j => { const h = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }; if (j) h['Content-Type'] = 'application/json'; return h; };
+  const UK = 'e360-workday-unlocks', SK = 'e360-monthly-shift';
+  const MC = {};
+  let tok = 0, busy = false, prog = 0, err = null, q = '', shift = 'all';
+  try { const s = localStorage.getItem(SK); if (s) shift = s; } catch (e) {}
+
+  const pad = n => String(n).padStart(2, '0');
+  const hhmm = m => m == null ? null : pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  const toMin = v => {
+    if (v == null) return null;
+    const s = String(v).trim(); if (!s || s === '-') return null;
+    const p = s.split(':'), h = parseInt(p[0], 10), mi = parseInt(p[1] || '0', 10);
+    return (Number.isFinite(h) && Number.isFinite(mi)) ? h * 60 + mi : null;
+  };
+  const f12 = m => m == null ? '—' : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
+  const dur = m => m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : w === 6 ? 'Saturday' : null }; } };
+  const selDay = () => { const p = document.getElementById('daily-date-picker'); return (p && p.value) || A().date || ''; };
+  const monthKey = () => {
+    const p = document.getElementById('monthly-picker'); if (!p) return '';
+    if (!p.value) p.value = (selDay() || new Date().toLocaleDateString('en-CA')).slice(0, 7);
+    return p.value;
+  };
+  const norm = it => ({ status: it.status || 'Unmarked', in: toMin(it.check_in != null ? it.check_in : it.checkIn), out: toMin(it.check_out != null ? it.check_out : it.checkOut) });
+
+  /* ---- shift resolution: matches the Daily page exactly ---- */
+  const kindOf = e => (e.shift === 'morning' || e.shift === 'afternoon') ? e.shift : 'exceptions';
+  const baseStart = e => { const v = toMin(e && (e._baseStart || e.start)); return v == null ? (kindOf(e) === 'afternoon' ? 780 : 540) : v; };
+  const startOn = (e, ds) => (kindOf(e) === 'afternoon' && String(ds).slice(5, 7) === '10') ? 720 : baseStart(e);
+  const META = { morning: ['🌅', 'Morning', 'bg-amber-50 text-amber-700'], afternoon: ['🌇', 'Afternoon', 'bg-violet-50 text-violet-700'], exceptions: ['⚙️', 'Exceptions', 'bg-cyan-50 text-cyan-700'] };
+  const TABS = [['all', '👥 All Shifts'], ['morning', '🌅 Morning'], ['afternoon', '🌇 Afternoon'], ['exceptions', '⚙️ Exceptions']];
+  const inShift = (e, k) => k === 'all' || kindOf(e) === k;
+
+  const CODE = {
+    'Present': ['P', 'bg-emerald-100 text-emerald-700', 1], 'Late': ['L', 'bg-amber-100 text-amber-800', 1],
+    'Half-Day': ['HD', 'bg-rose-100 text-rose-700', 0.5], 'WFH': ['WFH', 'bg-indigo-100 text-indigo-700', 1],
+    'Casual Leave': ['CL', 'bg-yellow-100 text-yellow-800', 1], 'Sick Leave': ['SL', 'bg-orange-100 text-orange-800', 1],
+    'Absent': ['A', 'bg-red-100 text-red-800', 0]
+  };
+  const cellOf = (rec, off, name) => {
+    if (off) return { code: 'H', label: name || 'Holiday', cls: 'bg-purple-100 text-purple-700', pay: 0, in: null, out: null };
+    if (!rec || !rec.status || rec.status === 'Unmarked') return { code: '-', label: 'Unmarked', cls: 'bg-slate-100 text-slate-400', pay: 0, in: null, out: null };
+    const c = CODE[rec.status];
+    return c ? { code: c[0], label: rec.status, cls: c[1], pay: c[2], in: rec.in, out: rec.out }
+             : { code: '-', label: rec.status, cls: 'bg-slate-100 text-slate-500', pay: 0, in: rec.in, out: rec.out };
+  };
+
+  async function people() {
+    let list = A().users || [];
+    if (list.length) return list;
+    try { if (typeof employees !== 'undefined' && employees.length) return employees; } catch (e) {}
+    const r = await fetch(API + '/users?page_size=100', { headers: HDR() });
+    if (!r.ok) throw new Error('Users API ' + r.status);
+    const d = await r.json();
+    list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => {
+      let sh = 'morning', st = '09:00';
+      if (u.custom_shift_start) {
+        st = String(u.custom_shift_start).slice(0, 5);
+        sh = st.startsWith('13') ? 'afternoon' : st.startsWith('09') ? 'morning' : 'exceptions';
+      }
+      return { id: String(u.id), name: u.full_name, shift: sh, start: st };
+    });
+    if (typeof att !== 'undefined') att.users = list;
+    try { employees = list; } catch (e) {}
+    return list;
+  }
+
+  function merge(days) {
+    const R = A().records = A().records || {};
+    Object.keys(days).forEach(d => {
+      R[d] = R[d] || {};
+      Object.keys(days[d]).forEach(id => {
+        const r = days[d][id];
+        R[d][id] = Object.assign({}, R[d][id], {
+          status: r.status,
+          check_in: r.in == null ? null : hhmm(r.in) + ':00', check_out: r.out == null ? null : hhmm(r.out) + ':00',
+          checkIn: hhmm(r.in) || '-', checkOut: hhmm(r.out) || '-'
+        });
+      });
+    });
+  }
+
+  async function load(month, force) {
+    const c = MC[month];
+    if (c && !force && Date.now() - c.at < 45000) return c;
+    const my = ++tok; busy = true; prog = 0; err = null; chrome();
+    const [y, m] = month.split('-').map(Number);
+    const dim = new Date(y, m, 0).getDate(), size = Math.ceil(dim / 4), chunks = [];
+    for (let s = 1; s <= dim; s += size) chunks.push([month + '-' + pad(s), month + '-' + pad(Math.min(dim, s + size - 1))]);
+    const days = {}; let ok = 0;
+    await Promise.all(chunks.map(async ([a, b]) => {
+      try {
+        const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: HDR() });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const rows = await r.json();
+        (Array.isArray(rows) ? rows : []).forEach(it => { const d = String(it.date); (days[d] = days[d] || {})[String(it.employee_id)] = norm(it); });
+        ok++;
+      } catch (e) {}
+      if (my === tok) { prog = Math.round(ok / chunks.length * 100); chrome(); }
+    }));
+    if (my !== tok) return MC[month] || { days: {}, at: 0 };
+    busy = false; prog = 100;
+    if (!ok) err = 'Could not load attendance from the server.';
+    MC[month] = { days, at: Date.now() };
+    merge(days);
+    return MC[month];
+  }
+
+  window.attLoadDay = async function () {
+    const d = selDay(); if (!d) return;
+    try {
+      const r = await fetch(`${API}/attendance/team-attendance?start_date=${d}&end_date=${d}`, { headers: HDR() });
+      if (r.ok) {
+        const rows = await r.json(), box = {};
+        (Array.isArray(rows) ? rows : []).forEach(it => { (box[String(it.date)] = box[String(it.date)] || {})[String(it.employee_id)] = norm(it); });
+        merge(box);
+        const k = d.slice(0, 7);
+        if (MC[k]) Object.keys(box).forEach(dd => { MC[k].days[dd] = Object.assign(MC[k].days[dd] || {}, box[dd]); });
+      }
+    } catch (e) {}
+    if (typeof attRender === 'function') attRender();
+  };
+  window.attLoadRange = async function (a, b) {
+    try {
+      const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: HDR() });
+      if (r.ok) {
+        const rows = await r.json(), box = {};
+        (Array.isArray(rows) ? rows : []).forEach(it => { (box[String(it.date)] = box[String(it.date)] || {})[String(it.employee_id)] = norm(it); });
+        merge(box);
+      }
+    } catch (e) {}
+    if (typeof attRender === 'function') attRender();
+  };
+
+  /* ---- chrome ---- */
+  function ensure() {
+    const picker = document.getElementById('monthly-picker');
+    if (!picker) return false;
+    monthKey();
+    const old = document.getElementById('m-toolbar'); if (old) old.remove();
+    const sec = document.getElementById('view-monthly');
+    if (sec && !document.getElementById('m-filterbar')) {
+      const stats = sec.querySelector('.grid');
+      const bar = document.createElement('div');
+      bar.id = 'm-filterbar';
+      bar.className = 'bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden';
+      bar.innerHTML =
+        '<div id="m-shift-tabs" class="px-4 pt-3 pb-2.5 flex items-center gap-2 flex-wrap border-b border-slate-100"></div>' +
+        '<div class="px-4 py-3 flex flex-col lg:flex-row items-stretch lg:items-center gap-3">' +
+          '<div class="relative flex-1 min-w-[180px]">' +
+            '<span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></span>' +
+            '<input id="m-emp-search" type="text" placeholder="Filter employees in this report..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">' +
+          '</div>' +
+          '<div class="flex-1 min-w-[220px]">' +
+            '<div class="flex items-center justify-between text-[11px] font-bold mb-1 gap-2"><span id="m-cover" class="text-slate-500">Loading…</span><span id="m-pct" class="text-indigo-600 tabular-nums shrink-0"></span></div>' +
+            '<div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><i id="m-bar" class="block h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-emerald-500 transition-all duration-500" style="width:0%"></i></div>' +
+          '</div>' +
+          '<button id="m-refresh" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-2"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v6h6M20 20v-6h-6M20 9a8 8 0 00-14.3-3.3M4 15a8 8 0 0014.3 3.3"/></svg><span>Refresh data</span></button>' +
+        '</div>' +
+        '<div id="m-shift-note" class="px-4 pb-3 text-[11px] font-semibold text-slate-500"></div>';
+      if (stats && stats.parentNode) stats.parentNode.insertBefore(bar, stats.nextSibling);
+      document.getElementById('m-emp-search').oninput = e => { q = e.target.value.toLowerCase().trim(); draw(); };
+      document.getElementById('m-refresh').onclick = async () => { const k = monthKey(); await load(k, true); draw(); if (typeof attRender === 'function') attRender(); };
+    }
+    const sc = document.querySelector('#view-monthly .overflow-x-auto'); if (sc) sc.classList.add('m-scroll');
+    const tb = document.querySelector('#view-monthly table');
+    const card = tb && tb.closest('.bg-white'); if (card) card.classList.add('m-accent');
+    return true;
+  }
+
+  function tabs(list) {
+    const box = document.getElementById('m-shift-tabs'); if (!box) return;
+    const n = { all: list.length, morning: 0, afternoon: 0, exceptions: 0 };
+    list.forEach(e => n[kindOf(e)]++);
+    box.innerHTML = TABS.map(([k, label]) => {
+      const on = shift === k;
+      return '<button data-shift="' + k + '" class="px-4 py-2 text-xs font-bold rounded-xl transition-all ' +
+        (on ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200') + '">' +
+        label + '<span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] ' +
+        (on ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-700') + '">' + n[k] + '</span></button>';
+    }).join('');
+    box.querySelectorAll('[data-shift]').forEach(b => b.onclick = () => {
+      shift = b.dataset.shift;
+      try { localStorage.setItem(SK, shift); } catch (e) {}
+      draw();
+    });
+  }
+
+  function note(month, emp) {
+    const el = document.getElementById('m-shift-note'); if (!el) return;
+    const oct = month.slice(5, 7) === '10';
+    if (emp) {
+      const k = kindOf(emp), st = startOn(emp, month + '-01'), m = META[k];
+      el.innerHTML = '<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg ' + m[2] + ' font-bold mr-2">' + m[0] + ' ' + m[1] + '</span>' +
+        esc(emp.name) + ' · shift start <b class="text-slate-700">' + f12(st) + '</b>' +
+        (k === 'afternoon' && oct ? ' <span class="text-amber-700">(October schedule)</span>' : '') +
+        ' · Late after <b class="text-amber-700">' + f12(st + 5) + '</b> · Half-Day after <b class="text-rose-700">' + f12(st + 180) + '</b>';
+      return;
+    }
+    if (shift === 'exceptions') {
+      el.innerHTML = '<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-cyan-50 text-cyan-700 font-bold mr-2">⚙️ Exceptions</span>Each employee keeps their own custom start time — Late and Half-Day are calculated per person, not against 9:00 AM.';
+      return;
+    }
+    if (shift === 'all') {
+      el.innerHTML = '<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 font-bold mr-2">👥 All Shifts</span>Morning 9:00 AM · Afternoon ' + (oct ? '12:00 PM (October schedule)' : '1:00 PM') + ' · Exceptions use their own custom times. Pick a shift tab to filter.';
+      return;
+    }
+    const st = shift === 'afternoon' ? (oct ? 720 : 780) : 540, m = META[shift];
+    el.innerHTML = '<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg ' + m[2] + ' font-bold mr-2">' + m[0] + ' ' + m[1] + '</span>' +
+      'Shift start <b class="text-slate-700">' + f12(st) + '</b>' + (shift === 'afternoon' && oct ? ' <span class="text-amber-700">(October schedule)</span>' : '') +
+      ' · Late after <b class="text-amber-700">' + f12(st + 5) + '</b> · Half-Day after <b class="text-rose-700">' + f12(st + 180) + '</b>';
+  }
+
+  function chrome(c) {
+    const cov = document.getElementById('m-cover'), pct = document.getElementById('m-pct'), bar = document.getElementById('m-bar'), btn = document.getElementById('m-refresh');
+    if (!cov) return;
+    if (busy) {
+      cov.textContent = 'Loading month data…'; cov.className = 'text-indigo-600';
+      pct.textContent = prog + '%'; bar.style.width = Math.max(6, prog) + '%';
+      if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+    if (err) { cov.textContent = err; cov.className = 'text-rose-600'; pct.textContent = ''; bar.style.width = '0%'; return; }
+    if (!c) { cov.textContent = 'Ready'; cov.className = 'text-slate-500'; pct.textContent = ''; bar.style.width = '100%'; return; }
+    const pc = c.working ? Math.round(c.marked / c.working * 100) : 0;
+    cov.textContent = c.label + ' · ' + c.emps + ' employee' + (c.emps === 1 ? '' : 's') + ' · ' + c.days + ' days · ' + c.working + ' working · ' + c.marked + ' marked · ' + (c.working - c.marked) + ' unmarked';
+    cov.className = 'text-slate-500';
+    pct.textContent = pc + '% marked';
+    bar.style.width = pc + '%';
+  }
+
+  function meta(month) {
+    const [y, m] = month.split('-').map(Number);
+    const dim = new Date(y, m, 0).getDate(), u = unlocks(), out = [];
+    for (let d = 1; d <= dim; d++) {
+      const ds = month + '-' + pad(d), i = info(ds), off = !!i.isHoliday && !u[ds];
+      out.push({ d, ds, dow: new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short' }), name: i.name, off, working: !off });
+    }
+    return out;
+  }
+
+  function jump(ds) {
+    const p = document.getElementById('daily-date-picker'); if (p) p.value = ds;
+    if (typeof switchTab === 'function') switchTab('daily');
+    if (typeof handleDateChange === 'function') handleDateChange(ds);
+  }
+
+  async function draw() {
+    if (!ensure()) return;
+    const month = monthKey(); if (!month) return;
+    const thead = document.getElementById('monthly-table-header'), tbody = document.getElementById('monthly-table-body');
+    if (!thead || !tbody) return;
+    let all;
+    try { all = await people(); } catch (e) {
+      err = e.message; chrome();
+      tbody.innerHTML = '<tr><td colspan="40" class="p-6 text-center text-rose-600 font-bold text-sm">' + esc(e.message) + '</td></tr>';
+      return;
+    }
+    tabs(all);
+    if (!all.length) { tbody.innerHTML = '<tr><td colspan="40" class="p-6 text-center text-slate-500 text-sm">No active employees.</td></tr>'; note(month); return; }
+
+    const days = (MC[month] && MC[month].days) || {};
+    const M = meta(month), working = M.filter(x => x.working).length;
+    const pool = all.filter(e => inShift(e, shift));
+    const shown = pool.filter(e => !q || String(e.name || '').toLowerCase().includes(q) || String(e.id).includes(q));
+    const [yy, mm] = month.split('-').map(Number);
+    const label = new Date(yy, mm - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' · ' + (shift === 'all' ? 'All Shifts' : META[shift][1]);
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const sub = (typeof activeMonthlySubTab !== 'undefined') ? activeMonthlySubTab : 'team';
+    const sel = document.getElementById('monthly-employee-select');
+
+    if (sub === 'team') {
+      note(month);
+      thead.innerHTML = '<th class="py-3 px-4 sticky left-0 bg-slate-50 z-20 border-r border-slate-200 min-w-[210px]">Employee</th>' +
+        M.map(x => '<th title="' + x.ds + (x.name ? ' · ' + x.name : '') + '" class="py-2 px-1.5 text-center min-w-[36px] ' + (x.off ? 'bg-purple-50 text-purple-700' : '') + (x.ds === selDay() ? ' ring-1 ring-inset ring-indigo-400' : '') + '"><div class="text-[11px] font-bold">' + x.d + '</div><div class="text-[9px] font-normal opacity-70">' + x.dow[0] + '</div></th>').join('') +
+        '<th class="py-3 px-3 text-center bg-indigo-50 text-indigo-700 font-bold border-l border-slate-200">Payable</th>';
+      let P = 0, L = 0, H = 0, C = 0, S = 0, PAY = 0, marked = 0, rows = '';
+      shown.forEach(emp => {
+        const k = kindOf(emp), m = META[k], st = startOn(emp, month + '-01');
+        let pay = 0, cells = '';
+        M.forEach(x => {
+          const rec = days[x.ds] && days[x.ds][String(emp.id)];
+          const c = cellOf(rec, x.off, x.name);
+          if (x.working) {
+            if (c.code !== '-') marked++;
+            if (c.code === 'P' || c.code === 'WFH') P++; else if (c.code === 'L') L++;
+            else if (c.code === 'HD') H++; else if (c.code === 'CL') C++; else if (c.code === 'SL') S++;
+            pay += c.pay;
+          }
+          const sh = startOn(emp, x.ds), d = c.in == null ? null : c.in - sh;
+          const tip = x.ds + ' (' + x.dow + ') · ' + c.label + ' · shift ' + f12(sh) +
+            (c.in != null ? ' · In ' + f12(c.in) : '') + (d != null && d > 0 ? ' (+' + dur(d) + ')' : '') +
+            (c.out != null ? ' · Out ' + f12(c.out) : '');
+          cells += '<td title="' + esc(tip) + '" data-jump="' + x.ds + '" class="py-2 px-1 text-center border-r border-slate-50 cursor-pointer hover:bg-indigo-50/70 transition-colors ' + (x.off ? 'bg-purple-50/40' : '') + (x.ds === selDay() ? ' bg-indigo-50/50' : '') + '"><span class="inline-block min-w-[24px] px-1 py-0.5 rounded text-[10px] font-bold ' + c.cls + '">' + c.code + '</span></td>';
+        });
+        PAY += pay;
+        rows += '<tr class="hover:bg-slate-50 transition-colors"><td class="py-2.5 px-4 font-semibold text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap">' +
+          '<div class="text-xs font-bold">' + esc(emp.name) + '</div>' +
+          '<div class="flex items-center gap-1.5 mt-0.5"><span class="text-[10px] text-slate-400 font-normal">#' + esc(emp.id) + '</span>' +
+          '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded ' + m[2] + '">' + m[0] + ' ' + f12(st) + '</span></div></td>' +
+          cells + '<td class="py-2.5 px-3 text-center font-bold bg-indigo-50/40 text-indigo-700 border-l border-slate-200 text-xs tabular-nums">' + (pay % 1 ? pay.toFixed(1) : pay) + '/' + working + '</td></tr>';
+      });
+      tbody.innerHTML = rows || '<tr><td colspan="40" class="p-6 text-center text-slate-500 text-sm">No employees in this shift / filter.</td></tr>';
+      set('m-working', working); set('m-present', P); set('m-late', L); set('m-half', H); set('m-casual', C); set('m-sick', S);
+      set('m-payable', shown.length ? (PAY / shown.length).toFixed(1) + ' avg' : '0');
+      chrome({ label, emps: shown.length, days: M.length, working: working * shown.length, marked });
+    } else {
+      if (sel) {
+        const keep = sel.value, sig = pool.map(e => e.id).join('|');
+        if (sel.dataset.sig !== sig) {
+          sel.innerHTML = pool.map(e => '<option value="' + e.id + '">' + esc(e.name) + ' · ' + META[kindOf(e)][0] + ' ' + f12(startOn(e, month + '-01')) + '</option>').join('');
+          sel.dataset.sig = sig;
+        }
+        if (keep && pool.some(e => String(e.id) === keep)) sel.value = keep;
+        else if (pool.length) sel.value = pool[0].id;
+      }
+      if (!pool.length) {
+        thead.innerHTML = '<th class="py-3 px-4">Employee</th>';
+        tbody.innerHTML = '<tr><td class="p-6 text-center text-slate-500 text-sm">No employees in this shift.</td></tr>';
+        note(month); chrome({ label, emps: 0, days: M.length, working: 0, marked: 0 });
+        return;
+      }
+      const id = sel && sel.value ? sel.value : pool[0].id;
+      const emp = pool.find(e => String(e.id) === String(id)) || pool[0];
+      note(month, emp);
+      thead.innerHTML = '<th class="py-3 px-4">Date</th><th class="py-3 px-4">Day</th><th class="py-3 px-4">Status</th><th class="py-3 px-4">Check-in</th><th class="py-3 px-4">Late by (vs shift)</th><th class="py-3 px-4">Check-out</th>';
+      let P = 0, L = 0, H = 0, C = 0, S = 0, PAY = 0, marked = 0, rows = '';
+      M.forEach(x => {
+        const rec = days[x.ds] && days[x.ds][String(emp.id)];
+        const c = cellOf(rec, x.off, x.name);
+        if (x.working) {
+          if (c.code !== '-') marked++;
+          if (c.code === 'P' || c.code === 'WFH') P++; else if (c.code === 'L') L++;
+          else if (c.code === 'HD') H++; else if (c.code === 'CL') C++; else if (c.code === 'SL') S++;
+          PAY += c.pay;
+        }
+        const sh = startOn(emp, x.ds), d = c.in == null ? null : c.in - sh;
+        const late = d == null ? '—'
+          : d < 0 ? '<span class="text-emerald-600 font-semibold">' + dur(-d) + ' early</span>'
+          : d <= 5 ? '<span class="text-emerald-600 font-semibold">On time' + (d ? ' · +' + d + 'm' : '') + '</span>'
+          : '<span class="' + (d <= 180 ? 'text-amber-600' : 'text-rose-600') + ' font-semibold">+' + dur(d) + '</span>';
+        rows += '<tr data-jump="' + x.ds + '" class="cursor-pointer hover:bg-indigo-50/60 transition-colors ' + (x.off ? 'bg-purple-50/30' : '') + (x.ds === selDay() ? ' bg-indigo-50/50' : '') + '">' +
+          '<td class="py-3 px-4 font-medium tabular-nums">' + x.ds + '</td>' +
+          '<td class="py-3 px-4 text-slate-500">' + x.dow + '</td>' +
+          '<td class="py-3 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ' + c.cls + '">' + c.label + '</span></td>' +
+          '<td class="py-3 px-4 font-bold tabular-nums text-slate-800">' + f12(c.in) + '<span class="block text-[10px] font-medium text-slate-400">shift ' + f12(sh) + '</span></td>' +
+          '<td class="py-3 px-4 text-xs">' + late + '</td>' +
+          '<td class="py-3 px-4 tabular-nums text-slate-600">' + f12(c.out) + '</td></tr>';
+      });
+      tbody.innerHTML = rows;
+      set('m-working', working); set('m-present', P); set('m-late', L); set('m-half', H); set('m-casual', C); set('m-sick', S);
+      set('m-payable', PAY % 1 ? PAY.toFixed(1) : PAY);
+      chrome({ label: label + ' · ' + emp.name, emps: 1, days: M.length, working, marked });
+    }
+    tbody.querySelectorAll('[data-jump]').forEach(el => el.onclick = () => jump(el.dataset.jump));
+  }
+
+  window.renderMonthlyView = function (sync) {
+    if (!ensure()) return;
+    const month = monthKey(); if (!month) return;
+    draw();
+    if (sync === false) { chrome(); return; }
+    load(month, false).then(() => { if (monthKey() === month) draw(); });
+  };
+
+  window.switchMonthlySubTab = function (sub) {
+    try { activeMonthlySubTab = sub; } catch (e) {}
+    const t = document.getElementById('msub-team'), e = document.getElementById('msub-emp'), c = document.getElementById('monthly-emp-container');
+    const on = 'px-4 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800';
+    const off = 'px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900';
+    if (t) t.className = sub === 'team' ? on : off;
+    if (e) e.className = sub === 'employee' ? on : off;
+    if (c) c.classList.toggle('hidden', sub !== 'employee');
+    draw();
+  };
+
+  window.exportMonthlyExcel = async function () {
+    if (typeof XLSX === 'undefined') return;
+    const month = monthKey(); if (!month) return;
+    await load(month, false);
+    const all = await people(), days = (MC[month] && MC[month].days) || {}, M = meta(month);
+    const pool = all.filter(e => inShift(e, shift) && (!q || String(e.name || '').toLowerCase().includes(q) || String(e.id).includes(q)));
+    const working = M.filter(x => x.working).length;
+    const wb = XLSX.utils.book_new();
+    const matrix = [['Employee360 — Monthly Attendance ' + month + ' · ' + (shift === 'all' ? 'All Shifts' : META[shift][1])], [working + ' working days · ' + pool.length + ' employees'], [],
+      ['ID', 'Name', 'Shift', 'Shift Start', ...M.map(x => x.d + ' ' + x.dow), 'Payable', 'Working Days']];
+    const times = [['Check-in / Check-out — ' + month], [], ['ID', 'Name', 'Shift', 'Date', 'Day', 'Shift Start', 'Status', 'Check-in', 'Late by', 'Check-out']];
+    pool.forEach(emp => {
+      const k = META[kindOf(emp)][1], st = startOn(emp, month + '-01');
+      let pay = 0; const row = [emp.id, emp.name, k, f12(st)];
+      M.forEach(x => {
+        const rec = days[x.ds] && days[x.ds][String(emp.id)];
+        const c = cellOf(rec, x.off, x.name), sh = startOn(emp, x.ds);
+        row.push(c.code);
+        if (x.working) pay += c.pay;
+        const d = c.in == null ? null : c.in - sh;
+        times.push([emp.id, emp.name, k, x.ds, x.dow, f12(sh), c.label, c.in == null ? '' : f12(c.in), d == null ? '' : (d > 0 ? '+' + dur(d) : 'On time'), c.out == null ? '' : f12(c.out)]);
+      });
+      row.push(pay, working); matrix.push(row);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), 'Matrix ' + month);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(times), 'Times ' + month);
+    XLSX.writeFile(wb, 'Monthly_Attendance_' + month + '_' + shift + '.xlsx');
+    if (typeof showStandardToast === 'function') showStandardToast('Exported ' + pool.length + ' employees (' + (shift === 'all' ? 'all shifts' : META[shift][1]) + ').');
+  };
+
+  const prevTab = window.switchTab;
+  if (typeof prevTab === 'function') window.switchTab = function (t) { const r = prevTab.apply(this, arguments); if (t === 'monthly') setTimeout(() => window.renderMonthlyView(), 20); return r; };
+  document.addEventListener('change', e => { if (e.target && (e.target.id === 'monthly-picker' || e.target.id === 'monthly-employee-select')) window.renderMonthlyView(); }, true);
+
+  const st = document.createElement('style');
+  st.textContent = '.m-scroll{scrollbar-width:thin;scrollbar-color:#a5b4fc #f1f5f9}' +
+    '.m-scroll::-webkit-scrollbar{height:11px;width:11px}' +
+    '.m-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}' +
+    '.m-scroll::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#a78bfa,#818cf8);border-radius:99px;border:2px solid #f1f5f9;background-clip:content-box}' +
+    '.m-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,#8b5cf6,#4f46e5);background-clip:content-box}' +
+    '.m-accent{position:relative}.m-accent::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#8b5cf6,#4f46e5,#0ea5e9,#10b981);z-index:30}';
+  document.head.appendChild(st);
+
+  setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'monthly') window.renderMonthlyView(); } catch (e) {} }, 900);
+})();
+</script>
+<script>
+/* ===== Monthly Excel Export — separate styled workbook per shift ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const CDN = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+  const HDR = j => { const h = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }; if (j) h['Content-Type'] = 'application/json'; return h; };
+  const UK = 'e360-workday-unlocks';
+  let libP = null, working = false;
+
+  const pad = n => String(n).padStart(2, '0');
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const toMin = v => {
+    if (v == null) return null;
+    const s = String(v).trim(); if (!s || s === '-') return null;
+    const p = s.split(':'), h = parseInt(p[0], 10), m = parseInt(p[1] || '0', 10);
+    return (Number.isFinite(h) && Number.isFinite(m)) ? h * 60 + m : null;
+  };
+  const f12 = m => m == null ? '—' : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
+  const hhmm = m => m == null ? '' : pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  const dur = m => m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : 'Saturday' }; } };
+  const monthKey = () => { const p = document.getElementById('monthly-picker'); return (p && p.value) || (A().date || '').slice(0, 7); };
+  const kindOf = e => (e.shift === 'morning' || e.shift === 'afternoon') ? e.shift : 'exceptions';
+  const baseStart = e => { const v = toMin(e && (e._baseStart || e.start)); return v == null ? (kindOf(e) === 'afternoon' ? 780 : 540) : v; };
+  const startOn = (e, ds) => (kindOf(e) === 'afternoon' && String(ds).slice(5, 7) === '10') ? 720 : baseStart(e);
+  const SH = {
+    morning: { name: 'Morning Shift', file: 'Morning-Shift', tint: 'FFFFF7ED', accent: 'FFB45309' },
+    afternoon: { name: 'Afternoon Shift', file: 'Afternoon-Shift', tint: 'FFF5F3FF', accent: 'FF6D28D9' },
+    exceptions: { name: 'Exceptions (Custom)', file: 'Exceptions-Custom', tint: 'FFECFEFF', accent: 'FF0E7490' }
+  };
+  const PAL = {
+    P: { code: 'P', label: 'Present', fill: 'FFDCFCE7', font: 'FF15803D', pay: 1 },
+    L: { code: 'L', label: 'Late', fill: 'FFFEE2E2', font: 'FFB91C1C', pay: 1 },
+    HD: { code: 'HD', label: 'Half-Day', fill: 'FFFFEDD5', font: 'FFC2410C', pay: 0.5 },
+    WFH: { code: 'WFH', label: 'WFH', fill: 'FFDBEAFE', font: 'FF1D4ED8', pay: 1 },
+    CL: { code: 'CL', label: 'Casual Leave', fill: 'FFFEF9C3', font: 'FFA16207', pay: 1 },
+    SL: { code: 'SL', label: 'Sick Leave', fill: 'FFF3E8FF', font: 'FF7E22CE', pay: 1 },
+    A: { code: 'A', label: 'Absent', fill: 'FFFECACA', font: 'FF7F1D1D', pay: 0 },
+    H: { code: 'H', label: 'Holiday / Weekend', fill: 'FFEDE9FE', font: 'FF6D28D9', pay: 0 },
+    U: { code: '–', label: 'Unmarked', fill: 'FFF8FAFC', font: 'FF94A3B8', pay: 0 }
+  };
+  const MAP = { 'Present': 'P', 'Late': 'L', 'Half-Day': 'HD', 'WFH': 'WFH', 'Casual Leave': 'CL', 'Sick Leave': 'SL', 'Absent': 'A' };
+  const keyOf = (rec, off) => off ? 'H' : (!rec || !rec.status || rec.status === 'Unmarked' ? 'U' : (MAP[rec.status] || 'U'));
+  const LEGEND = ['P', 'L', 'HD', 'WFH', 'CL', 'SL', 'A', 'H', 'U'];
+
+  function loadLib() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (libP) return libP;
+    libP = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = CDN; s.async = true;
+      s.onload = () => window.ExcelJS ? res(window.ExcelJS) : rej(new Error('ExcelJS unavailable'));
+      s.onerror = () => rej(new Error('Could not load the Excel styling library'));
+      document.head.appendChild(s);
+    }).catch(e => { libP = null; throw e; });
+    return libP;
+  }
+
+  async function people() {
+    let list = A().users || [];
+    if (list.length) return list;
+    const r = await fetch(API + '/users?page_size=100', { headers: HDR() });
+    if (!r.ok) throw new Error('Users API ' + r.status);
+    const d = await r.json();
+    list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => {
+      let sh = 'morning', st = '09:00';
+      if (u.custom_shift_start) { st = String(u.custom_shift_start).slice(0, 5); sh = st.startsWith('13') ? 'afternoon' : st.startsWith('09') ? 'morning' : 'exceptions'; }
+      return { id: String(u.id), name: u.full_name, shift: sh, start: st };
+    });
+    if (typeof att !== 'undefined') att.users = list;
+    return list;
+  }
+
+  async function monthData(month, onProg) {
+    const [y, m] = month.split('-').map(Number);
+    const dim = new Date(y, m, 0).getDate(), size = Math.ceil(dim / 4), chunks = [];
+    for (let s = 1; s <= dim; s += size) chunks.push([month + '-' + pad(s), month + '-' + pad(Math.min(dim, s + size - 1))]);
+    const data = {}; let done = 0, ok = 0;
+    await Promise.all(chunks.map(async ([a, b]) => {
+      try {
+        const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: HDR() });
+        if (r.ok) {
+          const rows = await r.json();
+          (Array.isArray(rows) ? rows : []).forEach(it => {
+            const d = String(it.date), id = String(it.employee_id);
+            (data[d] = data[d] || {})[id] = {
+              status: it.status || 'Unmarked',
+              in: toMin(it.check_in != null ? it.check_in : it.checkIn),
+              out: toMin(it.check_out != null ? it.check_out : it.checkOut)
+            };
+          });
+          ok++;
+        }
+      } catch (e) {}
+      done++; if (onProg) onProg(done / chunks.length);
+    }));
+    if (!ok) throw new Error('Could not reach the attendance server.');
+    const R = A().records = A().records || {};
+    Object.keys(data).forEach(d => {
+      R[d] = R[d] || {};
+      Object.keys(data[d]).forEach(id => {
+        const r = data[d][id];
+        R[d][id] = Object.assign({}, R[d][id], { status: r.status, check_in: r.in == null ? null : hhmm(r.in) + ':00', check_out: r.out == null ? null : hhmm(r.out) + ':00', checkIn: hhmm(r.in) || '-', checkOut: hhmm(r.out) || '-' });
+      });
+    });
+    const u = unlocks(), meta = [];
+    for (let d = 1; d <= dim; d++) {
+      const ds = month + '-' + pad(d), i = info(ds), off = !!i.isHoliday && !u[ds];
+      meta.push({ d, ds, dow: new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short' }), off, name: i.name, working: !off });
+    }
+    return { data, meta, dim, working: meta.filter(x => x.working).length };
+  }
+
+  /* ---------- Excel helpers ---------- */
+  const L = n => { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - r - 1) / 26; } return s; };
+  const solid = a => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: a } });
+  const BOX = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+  const CTR = { horizontal: 'center', vertical: 'middle' };
+  const put = (ws, r, c, v, o) => {
+    const cell = ws.getCell(r, c);
+    cell.value = v;
+    if (o) {
+      if (o.fill) cell.fill = solid(o.fill);
+      if (o.font || o.size || o.bold || o.color || o.italic) cell.font = { name: 'Calibri', size: o.size || 10, bold: !!o.bold, italic: !!o.italic, color: { argb: o.color || 'FF0F172A' } };
+      if (o.align) cell.alignment = o.align;
+      if (o.fmt) cell.numFmt = o.fmt;
+      if (o.box !== false) cell.border = BOX;
+    }
+    return cell;
+  };
+  const band = (ws, r, c1, c2, text, o) => {
+    ws.mergeCells(r, c1, r, c2);
+    for (let c = c1; c <= c2; c++) { const cell = ws.getCell(r, c); if (o.fill) cell.fill = solid(o.fill); }
+    const cell = ws.getCell(r, c1);
+    cell.value = text;
+    cell.font = { name: 'Calibri', size: o.size || 11, bold: o.bold !== false, color: { argb: o.color || 'FFFFFFFF' } };
+    cell.alignment = { horizontal: o.align || 'left', vertical: 'middle', indent: 1 };
+    ws.getRow(r).height = o.height || 22;
+  };
+  const timeVal = m => m == null ? null : m / 1440;
+
+  function stats(list, meta, data, month) {
+    return list.map(emp => {
+      const s = { emp, pay: 0, P: 0, L: 0, HD: 0, WFH: 0, CL: 0, SL: 0, A: 0, U: 0, marked: 0, lateMin: 0, ins: [] };
+      meta.forEach(x => {
+        const rec = data[x.ds] && data[x.ds][String(emp.id)];
+        const k = keyOf(rec, x.off);
+        if (!x.working) return;
+        s[k] = (s[k] || 0) + 1;
+        if (k !== 'U') s.marked++;
+        s.pay += PAL[k].pay;
+        if (rec && rec.in != null) {
+          s.ins.push(rec.in);
+          const d = rec.in - startOn(emp, x.ds);
+          if (d > 5) s.lateMin += d;
+        }
+      });
+      s.att = meta.filter(x => x.working).length ? s.marked / meta.filter(x => x.working).length : 0;
+      s.avg = s.ins.length ? Math.round(s.ins.reduce((a, b) => a + b, 0) / s.ins.length) : null;
+      s.min = s.ins.length ? Math.min.apply(null, s.ins) : null;
+      s.max = s.ins.length ? Math.max.apply(null, s.ins) : null;
+      return s;
+    });
+  }
+
+  function matrixSheet(wb, cfg) {
+    const { title, meta, rows, month, shift, mode, startLabel } = cfg;
+    const dim = meta.length, sumCols = mode === 'time'
+      ? ['Avg In', 'Earliest', 'Latest', 'Late Days', 'Late Min']
+      : ['Payable', 'Working', 'P', 'L', 'HD', 'CL', 'SL', 'A', '–', 'Att %'];
+    const last = 3 + dim + sumCols.length;
+    const ws = wb.addWorksheet(title, {
+      views: [{ state: 'frozen', xSplit: 3, ySplit: 7, topLeftCell: 'D8', activeCell: 'D8' }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:7', margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } },
+      properties: { defaultRowHeight: 19 }
+    });
+    ws.getColumn(1).width = 7; ws.getColumn(2).width = 27; ws.getColumn(3).width = 11.5;
+    for (let i = 0; i < dim; i++) ws.getColumn(4 + i).width = mode === 'time' ? 8.4 : 6.4;
+    sumCols.forEach((s, i) => ws.getColumn(4 + dim + i).width = s === 'Att %' ? 9.5 : 10.5);
+
+    band(ws, 1, 1, last, 'EMPLOYEE360  ·  ' + (mode === 'time' ? 'CHECK-IN TIMES' : 'ATTENDANCE MATRIX'), { fill: 'FF4F46E5', size: 15, height: 32 });
+    band(ws, 2, 1, last, cfg.monthLabel + '   ·   ' + shift.name + '   ·   ' + startLabel + '   ·   ' + rows.length + ' employees', { fill: 'FF3730A3', size: 11, height: 22 });
+    band(ws, 3, 1, last, 'Generated ' + new Date().toLocaleString() + '   ·   ' + cfg.working + ' working days   ·   Late is marked RED   ·   times are 24-hour', { fill: 'FFEEF2FF', color: 'FF3730A3', bold: false, size: 9.5, height: 19 });
+
+    LEGEND.forEach((k, i) => {
+      const p = PAL[k];
+      put(ws, 4, 1 + i, p.code, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR });
+    });
+    ws.mergeCells(4, LEGEND.length + 1, 4, last);
+    put(ws, 4, LEGEND.length + 1, LEGEND.map(k => PAL[k].code + ' = ' + PAL[k].label).join('   ·   '), { fill: 'FFFAFAFF', color: 'FF475569', size: 9, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
+    ws.getRow(4).height = 20;
+    ws.getRow(5).height = 6;
+    band(ws, 6, 1, last, mode === 'time' ? 'Actual arrival time per day — green on time, red late, orange half-day. Leave / holiday days show their code.' : 'Daily status per employee — hover-free, print-ready, filterable.', { fill: 'FFF8FAFC', color: 'FF64748B', bold: false, size: 9, height: 17 });
+
+    const H = 7;
+    ['ID', 'Employee', 'Shift Start'].forEach((t, i) => put(ws, H, i + 1, t, { fill: 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9.5, align: CTR }));
+    meta.forEach((x, i) => put(ws, H, 4 + i, x.d + '\n' + x.dow[0], { fill: x.off ? 'FF6D28D9' : 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    sumCols.forEach((t, i) => put(ws, H, 4 + dim + i, t, { fill: 'FF4F46E5', color: 'FFFFFFFF', bold: true, size: 9.5, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    ws.getRow(H).height = 30;
+
+    rows.forEach((s, ri) => {
+      const r = H + 1 + ri, emp = s.emp, z = ri % 2 ? 'FFF8FAFC' : 'FFFFFFFF';
+      put(ws, r, 1, emp.id, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
+      put(ws, r, 2, emp.name, { fill: z, bold: true, size: 10, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
+      put(ws, r, 3, f12(startOn(emp, month + '-01')), { fill: shift.tint, color: shift.accent, bold: true, size: 9, align: CTR });
+      meta.forEach((x, i) => {
+        const rec = cfg.data[x.ds] && cfg.data[x.ds][String(emp.id)];
+        const k = keyOf(rec, x.off), p = PAL[k];
+        const c = 4 + i;
+        if (mode === 'time') {
+          if (rec && rec.in != null && !x.off) {
+            const d = rec.in - startOn(emp, x.ds);
+            const tone = d <= 5 ? PAL.P : d <= 180 ? PAL.L : PAL.HD;
+            put(ws, r, c, timeVal(rec.in), { fill: tone.fill, color: tone.font, bold: d > 5, size: 9.5, align: CTR, fmt: 'hh:mm' });
+          } else {
+            put(ws, r, c, p.code, { fill: p.fill, color: p.font, bold: true, size: 9, align: CTR });
+          }
+        } else {
+          put(ws, r, c, p.code, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR });
+        }
+      });
+      const b = 4 + dim;
+      if (mode === 'time') {
+        put(ws, r, b, timeVal(s.avg), { fill: 'FFEEF2FF', color: 'FF3730A3', bold: true, size: 9.5, align: CTR, fmt: 'hh:mm' });
+        put(ws, r, b + 1, timeVal(s.min), { fill: 'FFF8FAFC', size: 9.5, align: CTR, fmt: 'hh:mm' });
+        put(ws, r, b + 2, timeVal(s.max), { fill: 'FFF8FAFC', size: 9.5, align: CTR, fmt: 'hh:mm' });
+        put(ws, r, b + 3, s.L + s.HD, { fill: s.L + s.HD ? 'FFFEE2E2' : 'FFF8FAFC', color: s.L + s.HD ? 'FFB91C1C' : 'FF94A3B8', bold: true, size: 9.5, align: CTR });
+        put(ws, r, b + 4, s.lateMin, { fill: s.lateMin ? 'FFFEE2E2' : 'FFF8FAFC', color: s.lateMin ? 'FFB91C1C' : 'FF94A3B8', bold: true, size: 9.5, align: CTR, fmt: '0" min"' });
+      } else {
+        put(ws, r, b, s.pay, { fill: 'FFEEF2FF', color: 'FF3730A3', bold: true, size: 10, align: CTR, fmt: '0.##' });
+        put(ws, r, b + 1, cfg.working, { fill: 'FFF8FAFC', color: 'FF64748B', size: 9.5, align: CTR });
+        ['P', 'L', 'HD', 'CL', 'SL', 'A', 'U'].forEach((k, i) => {
+          const v = s[k] || 0, p = PAL[k];
+          put(ws, r, b + 2 + i, v, { fill: v ? p.fill : 'FFFCFDFE', color: v ? p.font : 'FFCBD5E1', bold: v > 0, size: 9.5, align: CTR });
+        });
+        put(ws, r, b + 9, s.att, { fill: s.att >= 0.92 ? 'FFDCFCE7' : s.att >= 0.75 ? 'FFFFEDD5' : 'FFFEE2E2', color: s.att >= 0.92 ? 'FF15803D' : s.att >= 0.75 ? 'FFC2410C' : 'FFB91C1C', bold: true, size: 10, align: CTR, fmt: '0%' });
+      }
+      ws.getRow(r).height = 20;
+    });
+    const endRow = H + rows.length;
+    ws.autoFilter = { from: { row: H, column: 1 }, to: { row: endRow, column: last } };
+    if (mode !== 'time') {
+      ws.addConditionalFormatting({
+        ref: L(4 + dim + 9) + (H + 1) + ':' + L(4 + dim + 9) + endRow,
+        rules: [{ type: 'dataBar', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: 'FF6366F1' }, gradient: true }]
+      });
+    }
+    band(ws, endRow + 2, 1, last, 'Employee360 · ' + shift.name + ' · ' + cfg.monthLabel + ' · Payable: P / L / WFH / CL / SL = 1 day, HD = 0.5 day, A / – = 0. Holidays and weekends are excluded.', { fill: 'FFF1F5F9', color: 'FF64748B', bold: false, size: 9, height: 18 });
+    return ws;
+  }
+
+  function overviewSheet(wb, cfg) {
+    const { rows, shift, month } = cfg;
+    const cols = ['ID', 'Employee', 'Shift Start', 'Payable', 'Working', 'Present', 'Late', 'Half-Day', 'Casual', 'Sick', 'Absent', 'Unmarked', 'Attendance %', 'Avg Check-in', 'Total Late'];
+    const last = cols.length;
+    const ws = wb.addWorksheet('Overview', {
+      views: [{ state: 'frozen', ySplit: 9, xSplit: 2, topLeftCell: 'C10' }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      properties: { defaultRowHeight: 19 }
+    });
+    [7, 27, 12, 10, 10, 10, 9, 10, 9, 9, 9, 11, 14, 14, 12].forEach((w, i) => ws.getColumn(i + 1).width = w);
+    band(ws, 1, 1, last, 'EMPLOYEE360  ·  SHIFT OVERVIEW', { fill: 'FF4F46E5', size: 15, height: 32 });
+    band(ws, 2, 1, last, cfg.monthLabel + '   ·   ' + shift.name + '   ·   ' + cfg.startLabel, { fill: 'FF3730A3', size: 11, height: 22 });
+    band(ws, 3, 1, last, 'Generated ' + new Date().toLocaleString(), { fill: 'FFEEF2FF', color: 'FF3730A3', bold: false, size: 9.5, height: 18 });
+    const tot = rows.reduce((a, s) => ({ pay: a.pay + s.pay, marked: a.marked + s.marked, L: a.L + s.L, HD: a.HD + s.HD, P: a.P + s.P, lateMin: a.lateMin + s.lateMin }), { pay: 0, marked: 0, L: 0, HD: 0, P: 0, lateMin: 0 });
+    const slots = [['Employees', rows.length], ['Working days', cfg.working], ['Marked', tot.marked], ['Unmarked', cfg.working * rows.length - tot.marked], ['Present', tot.P], ['Late', tot.L], ['Half-days', tot.HD], ['Payable avg', rows.length ? (tot.pay / rows.length).toFixed(1) : 0], ['Late minutes', tot.lateMin]];
+    slots.forEach((s, i) => {
+      const c = 1 + i * Math.floor(last / slots.length);
+      put(ws, 5, c, s[0].toUpperCase(), { fill: 'FFF1F5F9', color: 'FF64748B', bold: true, size: 8.5, align: CTR });
+      put(ws, 6, c, s[1], { fill: i === 5 || i === 8 ? 'FFFEE2E2' : 'FFEEF2FF', color: i === 5 || i === 8 ? 'FFB91C1C' : 'FF3730A3', bold: true, size: 14, align: CTR });
+    });
+    ws.getRow(5).height = 17; ws.getRow(6).height = 26; ws.getRow(7).height = 6;
+    band(ws, 8, 1, last, 'Per-employee totals — sortable and filterable. Late and Half-Day columns are highlighted in red / orange.', { fill: 'FFF8FAFC', color: 'FF64748B', bold: false, size: 9, height: 17 });
+    cols.forEach((t, i) => put(ws, 9, i + 1, t, { fill: 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9.5, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    ws.getRow(9).height = 28;
+    rows.forEach((s, ri) => {
+      const r = 10 + ri, z = ri % 2 ? 'FFF8FAFC' : 'FFFFFFFF';
+      put(ws, r, 1, s.emp.id, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
+      put(ws, r, 2, s.emp.name, { fill: z, bold: true, size: 10, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
+      put(ws, r, 3, f12(startOn(s.emp, month + '-01')), { fill: shift.tint, color: shift.accent, bold: true, size: 9, align: CTR });
+      put(ws, r, 4, s.pay, { fill: 'FFEEF2FF', color: 'FF3730A3', bold: true, size: 10, align: CTR, fmt: '0.##' });
+      put(ws, r, 5, cfg.working, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
+      [['P', 6], ['L', 7], ['HD', 8], ['CL', 9], ['SL', 10], ['A', 11], ['U', 12]].forEach(([k, c]) => {
+        const v = s[k] || 0, p = PAL[k];
+        put(ws, r, c, v, { fill: v ? p.fill : 'FFFCFDFE', color: v ? p.font : 'FFCBD5E1', bold: v > 0, size: 9.5, align: CTR });
+      });
+      put(ws, r, 13, s.att, { fill: s.att >= 0.92 ? 'FFDCFCE7' : s.att >= 0.75 ? 'FFFFEDD5' : 'FFFEE2E2', color: s.att >= 0.92 ? 'FF15803D' : s.att >= 0.75 ? 'FFC2410C' : 'FFB91C1C', bold: true, size: 10, align: CTR, fmt: '0%' });
+      put(ws, r, 14, timeVal(s.avg), { fill: z, size: 9.5, align: CTR, fmt: 'hh:mm AM/PM' });
+      put(ws, r, 15, s.lateMin, { fill: s.lateMin ? 'FFFEE2E2' : z, color: s.lateMin ? 'FFB91C1C' : 'FF94A3B8', bold: !!s.lateMin, size: 9.5, align: CTR, fmt: '0" min"' });
+      ws.getRow(r).height = 20;
+    });
+    const end = 9 + rows.length;
+    ws.autoFilter = { from: { row: 9, column: 1 }, to: { row: end, column: last } };
+    ws.addConditionalFormatting({ ref: 'M10:M' + end, rules: [{ type: 'dataBar', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: 'FF6366F1' }, gradient: true }] });
+    return ws;
+  }
+
+  function logSheet(wb, cfg) {
+    const cols = ['Date', 'Day', 'ID', 'Employee', 'Shift', 'Shift Start', 'Status', 'Check-in', 'Late By', 'Check-out', 'Hours', 'Payable'];
+    const ws = wb.addWorksheet('Daily Log', {
+      views: [{ state: 'frozen', ySplit: 4, xSplit: 4, topLeftCell: 'E5' }],
+      pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:4' },
+      properties: { defaultRowHeight: 18 }
+    });
+    [12, 7, 7, 25, 20, 12, 15, 13, 12, 13, 10, 10].forEach((w, i) => ws.getColumn(i + 1).width = w);
+    band(ws, 1, 1, cols.length, 'EMPLOYEE360  ·  DAILY ATTENDANCE LOG', { fill: 'FF4F46E5', size: 14, height: 30 });
+    band(ws, 2, 1, cols.length, cfg.monthLabel + '   ·   ' + cfg.shift.name + '   ·   every employee, every day, with real check-in times', { fill: 'FF3730A3', size: 10.5, height: 20 });
+    ws.getRow(3).height = 6;
+    cols.forEach((t, i) => put(ws, 4, i + 1, t, { fill: 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9.5, align: CTR }));
+    ws.getRow(4).height = 26;
+    let r = 5;
+    cfg.rows.forEach(s => {
+      cfg.meta.forEach(x => {
+        const rec = cfg.data[x.ds] && cfg.data[x.ds][String(s.emp.id)];
+        const k = keyOf(rec, x.off), p = PAL[k], sh = startOn(s.emp, x.ds);
+        const d = rec && rec.in != null ? rec.in - sh : null;
+        const hrs = rec && rec.in != null && rec.out != null ? Math.max(0, (rec.out - rec.in) / 60) : null;
+        const z = x.off ? 'FFF7F5FF' : (r % 2 ? 'FFF8FAFC' : 'FFFFFFFF');
+        put(ws, r, 1, x.ds, { fill: z, size: 9.5, align: CTR });
+        put(ws, r, 2, x.dow, { fill: z, color: x.off ? 'FF6D28D9' : 'FF64748B', bold: x.off, size: 9.5, align: CTR });
+        put(ws, r, 3, s.emp.id, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
+        put(ws, r, 4, s.emp.name, { fill: z, bold: true, size: 9.5, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
+        put(ws, r, 5, cfg.shift.name, { fill: z, color: 'FF64748B', size: 9, align: CTR });
+        put(ws, r, 6, timeVal(sh), { fill: cfg.shift.tint, color: cfg.shift.accent, bold: true, size: 9, align: CTR, fmt: 'hh:mm AM/PM' });
+        put(ws, r, 7, x.off ? (x.name || 'Holiday') : p.label, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR });
+        put(ws, r, 8, rec && !x.off ? timeVal(rec.in) : null, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR, fmt: 'hh:mm AM/PM' });
+        put(ws, r, 9, x.off ? null : d, { fill: d != null && d > 5 ? 'FFFEE2E2' : z, color: d != null && d > 5 ? 'FFB91C1C' : 'FF15803D', bold: d != null && d > 5, size: 9.5, align: CTR, fmt: '+0" min";-0" min";"on time"' });
+        put(ws, r, 10, rec && !x.off ? timeVal(rec.out) : null, { fill: z, size: 9.5, align: CTR, fmt: 'hh:mm AM/PM' });
+        put(ws, r, 11, hrs, { fill: z, color: 'FF334155', size: 9.5, align: CTR, fmt: '0.00" h"' });
+        put(ws, r, 12, x.working ? p.pay : 0, { fill: x.working ? 'FFEEF2FF' : z, color: 'FF3730A3', bold: x.working, size: 9.5, align: CTR, fmt: '0.##' });
+        r++;
+      });
+    });
+    ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: r - 1, column: cols.length } };
+    return ws;
+  }
+
+  async function buildBook(key, month, ctx, opts) {
+    const ExcelJS = await loadLib();
+    const shift = SH[key];
+    const list = ctx.people.filter(e => kindOf(e) === key);
+    const rows = stats(list, ctx.meta, ctx.data, month);
+    const [y, m] = month.split('-').map(Number);
+    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const starts = [...new Set(list.map(e => f12(startOn(e, month + '-01'))))];
+    const startLabel = key === 'exceptions'
+      ? (starts.length ? 'Custom starts: ' + starts.join(', ') : 'Custom shift starts')
+      : 'Shift start ' + (starts[0] || f12(key === 'afternoon' ? (month.slice(5, 7) === '10' ? 720 : 780) : 540)) + (key === 'afternoon' && month.slice(5, 7) === '10' ? ' (October schedule)' : '');
+    const cfg = { month, monthLabel, shift, rows, meta: ctx.meta, data: ctx.data, working: ctx.working, startLabel };
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Employee360'; wb.created = new Date();
+    wb.title = 'Attendance ' + monthLabel + ' — ' + shift.name;
+    if (opts.overview) overviewSheet(wb, cfg);
+    matrixSheet(wb, Object.assign({ title: 'Attendance', mode: 'status' }, cfg));
+    if (opts.times) matrixSheet(wb, Object.assign({ title: 'Check-in Times', mode: 'time' }, cfg));
+    if (opts.log) logSheet(wb, cfg);
+    const buf = await wb.xlsx.writeBuffer();
+    save(buf, 'Attendance_' + monthLabel.replace(' ', '-') + '_' + shift.file + '.xlsx');
+    return list.length;
+  }
+
+  function save(buf, name) {
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 6000);
+  }
+
+  function plainBook(key, month, ctx) {
+    const shift = SH[key], list = ctx.people.filter(e => kindOf(e) === key);
+    const rows = stats(list, ctx.meta, ctx.data, month);
+    const head = ['ID', 'Employee', 'Shift Start'].concat(ctx.meta.map(x => x.d + ' ' + x.dow)).concat(['Payable', 'Att %']);
+    const aoa = [['Employee360 — ' + month + ' — ' + shift.name], [], head];
+    rows.forEach(s => aoa.push([s.emp.id, s.emp.name, f12(startOn(s.emp, month + '-01'))]
+      .concat(ctx.meta.map(x => PAL[keyOf(ctx.data[x.ds] && ctx.data[x.ds][String(s.emp.id)], x.off)].code))
+      .concat([s.pay, Math.round(s.att * 100) + '%'])));
+    const times = [['Check-in times — ' + shift.name], [], ['ID', 'Employee'].concat(ctx.meta.map(x => x.ds))];
+    rows.forEach(s => times.push([s.emp.id, s.emp.name].concat(ctx.meta.map(x => {
+      const rec = ctx.data[x.ds] && ctx.data[x.ds][String(s.emp.id)];
+      return x.off ? 'H' : (rec && rec.in != null ? hhmm(rec.in) : '');
+    }))));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Attendance');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(times), 'Check-in Times');
+    XLSX.writeFile(wb, 'Attendance_' + month + '_' + shift.file + '.xlsx');
+  }
+
+  /* ---------- Export panel ---------- */
+  function panel() {
+    let m = document.getElementById('mx-modal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'mx-modal';
+      m.className = 'fixed inset-0 z-[70] hidden items-center justify-center p-4';
+      m.style.background = 'rgba(15,23,42,.55)';
+      m.style.backdropFilter = 'blur(6px)';
+      m.onclick = e => { if (e.target === m) close(); };
+      document.body.appendChild(m);
+    }
+    return m;
+  }
+  function close() { const m = document.getElementById('mx-modal'); if (m) { m.classList.add('hidden'); m.classList.remove('flex'); } }
+  const say = t => { if (typeof showStandardToast === 'function') showStandardToast(t); };
+
+  function chips() {
+    return LEGEND.map(k => {
+      const p = PAL[k], hex = '#' + p.fill.slice(2), fg = '#' + p.font.slice(2);
+      return '<span class="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-200" style="background:' + hex + ';color:' + fg + '"><b>' + p.code + '</b><span class="font-semibold opacity-80">' + p.label + '</span></span>';
+    }).join('');
+  }
+
+  async function open() {
+    const month = monthKey();
+    if (!month) { say('Pick a month first.'); return; }
+    const m = panel();
+    const [y, mo] = month.split('-').map(Number);
+    const monthLabel = new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    let list = [];
+    try { list = await people(); } catch (e) {}
+    const n = { morning: 0, afternoon: 0, exceptions: 0 };
+    list.forEach(e => n[kindOf(e)]++);
+    const oct = month.slice(5, 7) === '10';
+    const cards = ['morning', 'afternoon', 'exceptions'].map(k => {
+      const s = SH[k], count = n[k];
+      const sub = k === 'exceptions' ? 'Each person keeps their own start time'
+        : k === 'afternoon' ? ('Shift start ' + (oct ? '12:00 PM · October schedule' : '01:00 PM'))
+        : 'Shift start 09:00 AM';
+      const icon = k === 'morning' ? '🌅' : k === 'afternoon' ? '🌇' : '⚙️';
+      return '<div class="rounded-2xl border border-slate-200 p-4 flex flex-col gap-3 bg-white hover:shadow-md transition-shadow">' +
+        '<div class="flex items-start justify-between gap-2">' +
+          '<div><div class="text-sm font-bold text-slate-800">' + icon + ' ' + s.name + '</div>' +
+          '<div class="text-[11px] text-slate-500 font-medium mt-0.5">' + sub + '</div></div>' +
+          '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:#' + s.tint.slice(2) + ';color:#' + s.accent.slice(2) + '">' + count + '</span>' +
+        '</div>' +
+        '<div class="text-[10px] text-slate-400 font-semibold leading-relaxed">Overview · Attendance matrix · Check-in times · Daily log</div>' +
+        '<button data-one="' + k + '" ' + (count ? '' : 'disabled') + ' class="mt-auto w-full text-xs font-bold px-3 py-2.5 rounded-xl transition-colors ' + (count ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">' + (count ? '⬇ Download .xlsx' : 'No employees') + '</button>' +
+      '</div>';
+    }).join('');
+
+    m.innerHTML =
+'<div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">' +
+  '<div class="px-6 py-4 text-white flex items-center justify-between gap-4" style="background:linear-gradient(100deg,#4f46e5,#7c3aed 55%,#0ea5e9)">' +
+    '<div><h3 class="text-base font-bold tracking-tight">Export Monthly Attendance</h3>' +
+    '<p class="text-[11px] font-medium text-indigo-100 mt-0.5">' + monthLabel + ' · one separate Excel file per shift · coloured statuses, sized columns, real check-in times</p></div>' +
+    '<button data-close class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 font-bold transition-colors">&times;</button>' +
+  '</div>' +
+  '<div class="mx-scroll overflow-y-auto px-6 py-5 space-y-5">' +
+    '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' + cards + '</div>' +
+    '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">' +
+      '<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Excel colour legend</div>' +
+      '<div class="flex flex-wrap gap-1.5">' + chips() + '</div>' +
+      '<div class="text-[11px] font-semibold text-rose-600">Late is red. Half-Day is orange. Absent is deep red. Holiday columns are purple.</div>' +
+    '</div>' +
+    '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' +
+      '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="checkbox" id="mx-overview" checked class="w-4 h-4 accent-indigo-600">Overview sheet</label>' +
+      '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="checkbox" id="mx-times" checked class="w-4 h-4 accent-indigo-600">Check-in times sheet</label>' +
+      '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="checkbox" id="mx-log" checked class="w-4 h-4 accent-indigo-600">Daily log sheet</label>' +
+    '</div>' +
+    '<div id="mx-prog" class="hidden"><div class="flex items-center justify-between text-[11px] font-bold mb-1"><span id="mx-ptext" class="text-indigo-600">Working…</span><span id="mx-ppct" class="text-slate-400 tabular-nums"></span></div>' +
+    '<div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><i id="mx-pbar" class="block h-full rounded-full transition-all duration-300" style="width:0%;background:linear-gradient(90deg,#8b5cf6,#4f46e5,#10b981)"></i></div></div>' +
+    '<div class="text-[11px] text-slate-400 font-medium leading-relaxed">Downloading all three files at once may prompt your browser to allow multiple downloads — choose <b>Allow</b>. Times are written as real Excel time values, so they sort and total correctly.</div>' +
+  '</div>' +
+  '<div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">' +
+    '<button data-close class="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-2">Cancel</button>' +
+    '<button data-all class="text-xs font-bold px-5 py-3 rounded-xl text-white shadow-sm transition-colors" style="background:linear-gradient(100deg,#4f46e5,#7c3aed)">⬇ Download all 3 shift files</button>' +
+  '</div>' +
+'</div>';
+    m.classList.remove('hidden'); m.classList.add('flex');
+    m.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
+    m.querySelectorAll('[data-one]').forEach(b => b.onclick = () => run([b.dataset.one]));
+    m.querySelector('[data-all]').onclick = () => run(['morning', 'afternoon', 'exceptions'].filter(k => n[k]));
+  }
+
+  function prog(pct, text) {
+    const box = document.getElementById('mx-prog');
+    if (!box) return;
+    box.classList.remove('hidden');
+    document.getElementById('mx-ptext').textContent = text;
+    document.getElementById('mx-ppct').textContent = Math.round(pct) + '%';
+    document.getElementById('mx-pbar').style.width = Math.max(4, pct) + '%';
+  }
+
+  async function run(keys) {
+    if (working || !keys.length) return;
+    working = true;
+    const month = monthKey();
+    const opts = {
+      overview: (document.getElementById('mx-overview') || {}).checked !== false,
+      times: (document.getElementById('mx-times') || {}).checked !== false,
+      log: (document.getElementById('mx-log') || {}).checked !== false
+    };
+    const btns = document.querySelectorAll('#mx-modal button');
+    btns.forEach(b => { b.disabled = true; b.classList.add('opacity-60'); });
+    try {
+      prog(4, 'Loading full month from the server…');
+      const list = await people();
+      const ctx = await monthData(month, f => prog(4 + f * 34, 'Loading full month from the server…'));
+      ctx.people = list;
+      let styled = true;
+      try { await loadLib(); } catch (e) { styled = false; }
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        prog(40 + (i / keys.length) * 55, 'Building ' + SH[k].name + ' workbook…');
+        if (styled) await buildBook(k, month, ctx, opts);
+        else plainBook(k, month, ctx);
+        prog(40 + ((i + 1) / keys.length) * 55, SH[k].name + ' downloaded');
+        if (i < keys.length - 1) await new Promise(r => setTimeout(r, 700));
+      }
+      prog(100, 'Done · ' + keys.length + ' file' + (keys.length > 1 ? 's' : '') + ' downloaded');
+      say(styled ? keys.length + ' styled Excel file' + (keys.length > 1 ? 's' : '') + ' exported.' : 'Exported without colours — styling library could not load.');
+      if (typeof window.renderMonthlyView === 'function') window.renderMonthlyView(false);
+      setTimeout(close, 1100);
+    } catch (e) {
+      prog(0, 'Export failed: ' + e.message);
+      const t = document.getElementById('mx-ptext'); if (t) t.className = 'text-rose-600';
+      say('Export failed: ' + e.message);
+    } finally {
+      working = false;
+      btns.forEach(b => { if (!b.hasAttribute('data-one') || b.textContent.indexOf('Download') > -1) { b.disabled = false; } b.classList.remove('opacity-60'); });
+    }
+  }
+
+  window.exportMonthlyExcel = open;
+
+  const st = document.createElement('style');
+  st.textContent = '.mx-scroll{scrollbar-width:thin;scrollbar-color:#a5b4fc #f1f5f9}' +
+    '.mx-scroll::-webkit-scrollbar{width:10px}' +
+    '.mx-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}' +
+    '.mx-scroll::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#a78bfa,#818cf8);border-radius:99px;border:2px solid #f1f5f9;background-clip:content-box}' +
+    '.mx-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#8b5cf6,#4f46e5);background-clip:content-box}' +
+    '#mx-modal>div{animation:mxIn .26s cubic-bezier(.32,.72,.35,1) both}@keyframes mxIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}';
+  document.head.appendChild(st);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); }, true);
+})();
+</script>
 </body>
 </html>
 
