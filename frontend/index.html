@@ -9132,7 +9132,328 @@ async function saveAttRecord() {
   setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'yearly') window.renderYearlyView(); } catch (e) {} }, 900);
 })();
 </script>
+<script>
+/* ===== Absent counted everywhere: 0 attendance · 0 payable · still a marked day ===== */
+(function () {
+  const UK = 'e360-workday-unlocks';
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const pad = n => String(n).padStart(2, '0');
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : 'Saturday' }; } };
+  const isOff = ds => !!info(ds).isHoliday && !unlocks()[ds];
+  const canon = s => {
+    if (s == null) return null;
+    const t = String(s).trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+    const M = { 'present': 'Present', 'p': 'Present', 'late': 'Late', 'l': 'Late', 'half day': 'Half-Day', 'halfday': 'Half-Day', 'hd': 'Half-Day', 'wfh': 'WFH', 'work from home': 'WFH', 'casual leave': 'Casual Leave', 'cl': 'Casual Leave', 'sick leave': 'Sick Leave', 'sl': 'Sick Leave', 'absent': 'Absent', 'a': 'Absent', 'unmarked': 'Unmarked' };
+    return M[t] || String(s).trim();
+  };
+  const recOf = (ds, id) => { const d = (A().records || {})[ds]; return d ? (d[id] || d[String(id)] || null) : null; };
+  const stOf = (ds, id) => { const r = recOf(ds, id); return r ? canon(typeof r === 'string' ? r : r.status) : null; };
+  const empOf = id => (A().users || []).find(e => String(e.id) === String(id)) || null;
+  const kindOf = e => (e.shift === 'morning' || e.shift === 'afternoon') ? e.shift : 'exceptions';
+  const META = { morning: ['🌅', 'Morning'], afternoon: ['🌇', 'Afternoon'], exceptions: ['⚙️', 'Custom'] };
+  const selDay = () => { const p = document.getElementById('daily-date-picker'); return (p && p.value) || A().date || ''; };
+  const monthKey = () => { const p = document.getElementById('monthly-picker'); return (p && p.value) || ''; };
+  const yearNow = () => { const s = document.getElementById('yearly-year-select'); return Number(s && s.value) || new Date().getFullYear(); };
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const say = m => { if (typeof showStandardToast === 'function') showStandardToast(m); };
 
+  function monthDays(mk) {
+    if (!mk) return [];
+    const [y, m] = mk.split('-').map(Number), dim = new Date(y, m, 0).getDate(), out = [];
+    for (let d = 1; d <= dim; d++) { const ds = mk + '-' + pad(d); out.push({ ds, working: !isOff(ds) }); }
+    return out;
+  }
+  function yearDays(y) {
+    const out = [];
+    for (let m = 1; m <= 12; m++) monthDays(y + '-' + pad(m)).forEach(d => out.push(d));
+    return out;
+  }
+  const idsFrom = tbody => {
+    const ids = [];
+    Array.prototype.forEach.call(tbody.children, tr => {
+      if (!tr.firstElementChild) return;
+      const m = /#(\d+)/.exec(tr.firstElementChild.textContent || '');
+      if (m) ids.push(m[1]);
+    });
+    return ids;
+  };
+
+  /* ---------- DAILY: dedicated Absent chip + rule strip ---------- */
+  function ensureDaily() {
+    const chip = document.getElementById('chip-present');
+    if (!chip) return false;
+    const grid = chip.closest('.grid');
+    if (!grid) return false;
+    grid.className = 'grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3';
+    if (!document.getElementById('chip-absent')) {
+      const hol = document.getElementById('chip-holiday');
+      const anchor = hol ? hol.closest('.bg-white') : null;
+      const card = document.createElement('div');
+      card.id = 'absent-chip-card';
+      card.className = 'bg-red-50 p-3.5 rounded-xl border border-red-200 shadow-sm flex flex-col cursor-pointer hover:bg-red-100 hover:border-red-300 transition-colors';
+      card.title = 'Click to see who is absent';
+      card.innerHTML = '<span class="text-xs font-semibold text-red-500 uppercase">Absent</span><span id="chip-absent" class="text-2xl font-bold text-red-700 mt-1">0</span>';
+      card.onclick = () => openAbsent('day');
+      if (anchor && anchor.parentNode === grid) grid.insertBefore(card, anchor); else grid.appendChild(card);
+    }
+    if (!document.getElementById('absent-rule') && grid.parentNode) {
+      const note = document.createElement('div');
+      note.id = 'absent-rule';
+      note.className = 'text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5 leading-relaxed';
+      note.innerHTML = '<b>Absent</b> earns <b>0 attendance credit</b> and <b>0 payable days</b> — and it still counts as a marked day, so it pulls the percentage down. Sick / Casual Leave also earn 0 attendance but keep 1 payable day. Click the red <b>Absent</b> card to see exactly who.';
+      grid.parentNode.insertBefore(note, grid.nextSibling);
+    }
+    return true;
+  }
+
+  function paintDaily() {
+    if (!ensureDaily()) return;
+    const ds = selDay(); if (!ds) return;
+    const off = isOff(ds);
+    const c = { present: 0, late: 0, half: 0, leave: 0, absent: 0, holiday: 0, unmarked: 0 };
+    (A().users || []).forEach(e => {
+      if (off) { c.holiday++; return; }
+      const s = stOf(ds, e.id);
+      if (s === 'Present' || s === 'WFH') c.present++;
+      else if (s === 'Late') c.late++;
+      else if (s === 'Half-Day') c.half++;
+      else if (s === 'Sick Leave' || s === 'Casual Leave') c.leave++;
+      else if (s === 'Absent') c.absent++;
+      else c.unmarked++;
+    });
+    set('chip-present', c.present); set('chip-late', c.late); set('chip-halfday', c.half);
+    set('chip-leave', c.leave); set('chip-absent', c.absent); set('chip-holiday', c.holiday); set('chip-unmarked', c.unmarked);
+    const card = document.getElementById('absent-chip-card');
+    if (card) card.classList.toggle('ring-2', c.absent > 0), card.classList.toggle('ring-red-300', c.absent > 0);
+  }
+
+  /* ---------- MONTHLY: Absent card + Absent column ---------- */
+  function ensureMonthly() {
+    const w = document.getElementById('m-working'); if (!w) return false;
+    const grid = w.closest('.grid'); if (!grid) return false;
+    grid.className = 'grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3';
+    if (!document.getElementById('m-absent')) {
+      const pay = document.getElementById('m-payable');
+      const anchor = pay ? pay.closest('div') : null;
+      const card = document.createElement('div');
+      card.className = 'bg-red-50 border border-red-200 p-3.5 rounded-xl shadow-sm cursor-pointer hover:bg-red-100 transition-colors';
+      card.title = 'Click to list every absent day this month';
+      card.innerHTML = '<span class="text-xs font-semibold text-red-500 uppercase">Absent</span><span id="m-absent" class="text-xl font-bold text-red-700 mt-1 block">0</span>';
+      card.onclick = () => openAbsent('month');
+      if (anchor && anchor.parentNode === grid) grid.insertBefore(card, anchor); else grid.appendChild(card);
+    }
+    return true;
+  }
+
+  function paintMonthly() {
+    const thead = document.getElementById('monthly-table-header'), tbody = document.getElementById('monthly-table-body');
+    if (!thead || !tbody || !ensureMonthly()) return;
+    const days = monthDays(monthKey());
+    const detail = /^date$/i.test(((thead.firstElementChild || {}).textContent || '').trim());
+    let total = 0;
+    if (detail) {
+      Array.prototype.forEach.call(tbody.children, tr => {
+        const pill = tr.children[2] ? tr.children[2].textContent.trim() : '';
+        if (pill === 'Absent') { total++; tr.classList.add('bg-red-50/50'); }
+      });
+    } else {
+      const last = thead.lastElementChild;
+      if (last && last.textContent.trim() !== 'Absent') {
+        const th = document.createElement('th');
+        th.className = 'py-3 px-3 text-center bg-red-50 text-red-700 font-bold border-l border-slate-200';
+        th.textContent = 'Absent';
+        thead.appendChild(th);
+      }
+      Array.prototype.forEach.call(tbody.children, tr => {
+        if (tr.children.length < 3 || tr.querySelector('[data-abs]')) return;
+        const m = /#(\d+)/.exec(tr.firstElementChild.textContent || '');
+        if (!m) return;
+        let n = 0;
+        days.forEach(d => { if (d.working && stOf(d.ds, m[1]) === 'Absent') n++; });
+        total += n;
+        const td = document.createElement('td');
+        td.setAttribute('data-abs', '1');
+        td.className = 'py-2.5 px-3 text-center font-bold border-l border-slate-200 text-xs tabular-nums ' + (n ? 'bg-red-50 text-red-700' : 'text-slate-300');
+        td.textContent = n || '–';
+        tr.appendChild(td);
+      });
+    }
+    set('m-absent', total);
+  }
+
+  /* ---------- YEARLY: Absent card ---------- */
+  function ensureYearly() {
+    const w = document.getElementById('y-working'); if (!w) return false;
+    const grid = w.closest('.grid'); if (!grid) return false;
+    grid.className = 'grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3';
+    if (!document.getElementById('y-absent')) {
+      const pay = document.getElementById('y-payable');
+      const anchor = pay ? pay.closest('div') : null;
+      const card = document.createElement('div');
+      card.className = 'bg-red-50 border border-red-200 p-3.5 rounded-xl shadow-sm cursor-pointer hover:bg-red-100 transition-colors';
+      card.title = 'Click to list every absent day this year';
+      card.innerHTML = '<span class="text-xs font-semibold text-red-500 uppercase">Absent</span><span id="y-absent" class="text-xl font-bold text-red-700 mt-1 block">0</span>';
+      card.onclick = () => openAbsent('year');
+      if (anchor && anchor.parentNode === grid) grid.insertBefore(card, anchor); else grid.appendChild(card);
+    }
+    return true;
+  }
+
+  function paintYearly() {
+    const tbody = document.getElementById('yearly-table-body');
+    if (!tbody || !ensureYearly()) return;
+    const ids = idsFrom(tbody), days = yearDays(yearNow());
+    let total = 0;
+    ids.forEach(id => days.forEach(d => { if (d.working && stOf(d.ds, id) === 'Absent') total++; }));
+    set('y-absent', total);
+  }
+
+  /* ---------- Absent drawer ---------- */
+  function closeDrawer() { const m = document.getElementById('abs-modal'); if (m) { m.classList.add('hidden'); m.classList.remove('flex'); } }
+
+  function openAbsent(scope) {
+    let ids = [], days = [], label = '';
+    if (scope === 'day') {
+      const ds = selDay(); if (!ds) { say('Pick a date first.'); return; }
+      ids = (A().users || []).map(e => e.id); days = [{ ds, working: !isOff(ds) }]; label = ds;
+    } else if (scope === 'month') {
+      const tbody = document.getElementById('monthly-table-body');
+      const thead = document.getElementById('monthly-table-header');
+      const detail = /^date$/i.test(((thead && thead.firstElementChild || {}).textContent || '').trim());
+      const sel = document.getElementById('monthly-employee-select');
+      ids = detail ? (sel && sel.value ? [sel.value] : []) : idsFrom(tbody || document.createElement('div'));
+      days = monthDays(monthKey()); label = monthKey() || 'month';
+    } else {
+      ids = idsFrom(document.getElementById('yearly-table-body') || document.createElement('div'));
+      days = yearDays(yearNow()); label = String(yearNow());
+    }
+    const rows = [];
+    days.forEach(d => {
+      if (!d.working) return;
+      ids.forEach(id => { if (stOf(d.ds, id) === 'Absent') { const e = empOf(id); if (e) rows.push({ ds: d.ds, emp: e }); } });
+    });
+    rows.sort((a, b) => a.ds < b.ds ? -1 : a.ds > b.ds ? 1 : String(a.emp.name).localeCompare(String(b.emp.name)));
+
+    let m = document.getElementById('abs-modal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'abs-modal';
+      m.className = 'fixed inset-0 z-[75] hidden items-center justify-center p-4';
+      m.style.background = 'rgba(15,23,42,.58)';
+      m.style.backdropFilter = 'blur(6px)';
+      m.onclick = e => { if (e.target === m) closeDrawer(); };
+      document.body.appendChild(m);
+    }
+    const scopeName = scope === 'day' ? 'Selected day' : scope === 'month' ? 'Month' : 'Year';
+    m.innerHTML =
+'<div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-red-200 overflow-hidden max-h-[90vh] flex flex-col">' +
+  '<div class="px-6 py-4 text-white flex items-center justify-between gap-4" style="background:linear-gradient(100deg,#7f1d1d,#b91c1c 55%,#e11d48)">' +
+    '<div><h3 class="text-base font-bold tracking-tight">Absent register</h3>' +
+    '<p class="text-[11px] font-medium text-red-100 mt-0.5">' + scopeName + ' · ' + esc(label) + ' · <b>' + rows.length + '</b> absent day' + (rows.length === 1 ? '' : 's') + ' · each one costs 1 attendance day and 1 payable day</p></div>' +
+    '<button data-close class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 font-bold transition-colors">&times;</button></div>' +
+  '<div class="px-5 py-3 border-b border-slate-200 bg-red-50/40">' +
+    '<input id="abs-q" type="text" placeholder="Filter by name or ID…" class="w-full bg-white border border-red-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">' +
+  '</div>' +
+  '<div id="abs-list" class="abs-scroll flex-1 overflow-y-auto px-5 py-3"></div>' +
+  '<div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">' +
+    '<span class="text-[11px] font-semibold text-slate-500">Absent is never paid and never counted as attended.</span>' +
+    '<div class="flex gap-2">' +
+      '<button id="abs-csv" class="text-xs font-bold px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors">⬇ Export list</button>' +
+      '<button data-close class="text-xs font-bold px-4 py-2 rounded-xl text-white bg-red-700 hover:bg-red-800 transition-colors">Done</button>' +
+    '</div></div></div>';
+    m.classList.remove('hidden'); m.classList.add('flex');
+    m.querySelectorAll('[data-close]').forEach(b => b.onclick = closeDrawer);
+
+    const list = m.querySelector('#abs-list');
+    function paintList() {
+      const q = (m.querySelector('#abs-q').value || '').toLowerCase().trim();
+      const shown = rows.filter(r => !q || String(r.emp.name).toLowerCase().includes(q) || String(r.emp.id).includes(q));
+      if (!shown.length) {
+        list.innerHTML = '<div class="text-center py-12"><div class="text-3xl">✅</div><div class="text-sm font-bold text-slate-700 mt-2">' +
+          (rows.length ? 'No match for that filter.' : (scope === 'day' && isOff(selDay()) ? 'Non-working day — nobody is marked absent.' : 'No absences recorded here.')) +
+          '</div><div class="text-[11px] text-slate-400 font-medium mt-1">Attendance percentage is unaffected by absences in this view.</div></div>';
+        return;
+      }
+      let html = '', last = '';
+      shown.forEach(r => {
+        if (r.ds !== last) {
+          const dn = new Date(r.ds + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+          html += '<div class="sticky top-0 bg-white/95 backdrop-blur px-1 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-600 border-b border-red-100 mt-2 first:mt-0">' + dn + '</div>';
+          last = r.ds;
+        }
+        const k = kindOf(r.emp), mm = META[k];
+        html += '<div class="flex items-center gap-3 py-2.5 px-1 border-b border-slate-100">' +
+          '<span class="w-8 h-8 rounded-lg bg-red-100 text-red-700 font-bold text-[11px] flex items-center justify-center shrink-0">' + esc(String(r.emp.name).slice(0, 2).toUpperCase()) + '</span>' +
+          '<span class="flex-1 min-w-0"><span class="block text-sm font-bold text-slate-800 truncate">' + esc(r.emp.name) + '</span>' +
+          '<span class="text-[10px] text-slate-400 font-semibold">#' + esc(r.emp.id) + ' · ' + mm[0] + ' ' + mm[1] + '</span></span>' +
+          '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800">Absent</span>' +
+          '<button data-jump="' + r.ds + '" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 transition-colors">Open day</button></div>';
+      });
+      list.innerHTML = html;
+      list.querySelectorAll('[data-jump]').forEach(b => b.onclick = () => {
+        const p = document.getElementById('daily-date-picker'); if (p) p.value = b.dataset.jump;
+        if (typeof switchTab === 'function') switchTab('daily');
+        if (typeof handleDateChange === 'function') handleDateChange(b.dataset.jump);
+        closeDrawer();
+      });
+    }
+    m.querySelector('#abs-q').oninput = paintList;
+    m.querySelector('#abs-csv').onclick = () => {
+      if (!rows.length) { say('Nothing to export.'); return; }
+      const csv = ['Date,Employee ID,Name,Shift,Status,Attendance credit,Payable days']
+        .concat(rows.map(r => [r.ds, r.emp.id, '"' + String(r.emp.name).replace(/"/g, '""') + '"', META[kindOf(r.emp)][1], 'Absent', '0', '0'].join(','))).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+      const a = document.createElement('a'); a.href = url; a.download = 'Absent_' + label + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      say(rows.length + ' absent rows exported.');
+    };
+    paintList();
+  }
+
+  /* ---------- hooks ---------- */
+  function watch(el, fn) {
+    if (!el || el.__absWatch) return;
+    const obs = new MutationObserver(() => {
+      obs.disconnect();
+      try { fn(); } catch (e) {}
+      obs.observe(el, { childList: true, subtree: true });
+    });
+    obs.observe(el, { childList: true, subtree: true });
+    el.__absWatch = true;
+  }
+  function bind() {
+    watch(document.getElementById('monthly-table-body'), paintMonthly);
+    watch(document.getElementById('yearly-table-body'), paintYearly);
+  }
+
+  const prevRender = window.attRender;
+  if (typeof prevRender === 'function') window.attRender = function () { const r = prevRender.apply(this, arguments); paintDaily(); bind(); return r; };
+  const prevM = window.renderMonthlyView;
+  if (typeof prevM === 'function') window.renderMonthlyView = function () { const r = prevM.apply(this, arguments); bind(); setTimeout(paintMonthly, 40); return r; };
+  const prevY = window.renderYearlyView;
+  if (typeof prevY === 'function') window.renderYearlyView = function () { const r = prevY.apply(this, arguments); bind(); setTimeout(paintYearly, 40); return r; };
+  const prevTab = window.switchTab;
+  if (typeof prevTab === 'function') window.switchTab = function (t) {
+    const r = prevTab.apply(this, arguments);
+    setTimeout(() => { bind(); if (t === 'daily') paintDaily(); if (t === 'monthly') paintMonthly(); if (t === 'yearly') paintYearly(); }, 80);
+    return r;
+  };
+
+  const st = document.createElement('style');
+  st.textContent = '.abs-scroll{scrollbar-width:thin;scrollbar-color:#fca5a5 #fef2f2}' +
+    '.abs-scroll::-webkit-scrollbar{width:10px}' +
+    '.abs-scroll::-webkit-scrollbar-track{background:#fef2f2;border-radius:99px}' +
+    '.abs-scroll::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#f87171,#b91c1c);border-radius:99px;border:2px solid #fef2f2;background-clip:content-box}' +
+    '.abs-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#ef4444,#7f1d1d);background-clip:content-box}' +
+    '#abs-modal>div{animation:absIn .24s cubic-bezier(.32,.72,.35,1) both}@keyframes absIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}';
+  document.head.appendChild(st);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); }, true);
+
+  setTimeout(() => { bind(); paintDaily(); paintMonthly(); paintYearly(); }, 1200);
+})();
+</script>
 
 </body>
 </html>
