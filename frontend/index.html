@@ -8709,6 +8709,146 @@ async function saveAttRecord() {
 })();
 </script>
 
+<script>
+/* ===== FIX: range requests were dropping records — fetch per day, merge, de-duplicate ===== */
+(function () {
+  const EP = '/attendance/team-attendance';
+  const MARK = '/attendance/mark';
+  const orig = window.fetch.bind(window);
+  const cache = new Map(), flying = new Map();
+  const TTL = 25000, MAXC = 6;
+  let running = 0; const queue = [];
+
+  const pad = n => String(n).padStart(2, '0');
+  const dkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+
+  function pump() { while (running < MAXC && queue.length) { running++; queue.shift()(); } }
+  function slot(fn) {
+    return new Promise((res, rej) => {
+      queue.push(() => { fn().then(res, rej).then(() => { running--; pump(); }); });
+      pump();
+    });
+  }
+
+  const CANON = {
+    'present': 'Present', 'p': 'Present', 'late': 'Late', 'l': 'Late',
+    'half day': 'Half-Day', 'halfday': 'Half-Day', 'hd': 'Half-Day',
+    'wfh': 'WFH', 'work from home': 'WFH',
+    'casual leave': 'Casual Leave', 'cl': 'Casual Leave',
+    'sick leave': 'Sick Leave', 'sl': 'Sick Leave',
+    'absent': 'Absent', 'a': 'Absent', 'unmarked': 'Unmarked'
+  };
+  const canon = s => {
+    if (s == null) return s;
+    const t = String(s).trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+    return CANON[t] || String(s).trim();
+  };
+  const score = r => (r.check_in ? 4 : 0) + (r.check_out ? 2 : 0) + (r.status && r.status !== 'Unmarked' ? 1 : 0);
+
+  function dedupe(rows) {
+    const map = new Map();
+    rows.forEach(r => {
+      if (!r || r.date == null || r.employee_id == null) return;
+      const date = String(r.date).slice(0, 10);
+      const cand = Object.assign({}, r, { date: date, status: canon(r.status) });
+      const k = date + '|' + String(r.employee_id);
+      const cur = map.get(k);
+      if (!cur || score(cand) > score(cur) ||
+         (score(cand) === score(cur) && Number(cand.id || 0) > Number(cur.id || 0))) map.set(k, cand);
+    });
+    return Array.from(map.values());
+  }
+
+  const asRows = j => Array.isArray(j) ? j : (j && Array.isArray(j.items) ? j.items : []);
+
+  function dayRows(baseUrl, date, init) {
+    const c = cache.get(date);
+    if (c && Date.now() - c.at < TTL) return Promise.resolve(c.rows);
+    if (flying.has(date)) return flying.get(date);
+    const u = new URL(baseUrl, location.href);
+    u.searchParams.set('start_date', date);
+    u.searchParams.set('end_date', date);
+    const target = u.toString();
+    const p = slot(async () => {
+      let last;
+      for (let i = 0; i < 3; i++) {
+        try {
+          const r = await orig(target, init);
+          if (r.ok) return asRows(await r.json());
+          last = new Error('HTTP ' + r.status);
+        } catch (e) { last = e; }
+        await new Promise(z => setTimeout(z, 220 * (i + 1)));
+      }
+      throw last || new Error('day fetch failed');
+    }).then(rows => { cache.set(date, { at: Date.now(), rows: rows }); flying.delete(date); return rows; },
+          err => { flying.delete(date); throw err; });
+    flying.set(date, p);
+    return p;
+  }
+
+  async function handleRange(input, init, u) {
+    const s = u.searchParams.get('start_date'), e = u.searchParams.get('end_date');
+    const d0 = new Date(s + 'T00:00:00'), d1 = new Date(e + 'T00:00:00');
+    const days = [];
+    for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1)) { days.push(dkey(d)); if (days.length > 400) break; }
+    let rows = [], failed = 0;
+
+    if (days.length <= 45) {
+      const res = await Promise.allSettled(days.map(dt => dayRows(u.toString(), dt, init)));
+      res.forEach(r => { if (r.status === 'fulfilled') rows = rows.concat(r.value); else failed++; });
+    } else {
+      const wins = [];
+      for (let i = 0; i < days.length; i += 7) wins.push(days.slice(i, i + 7));
+      const res = await Promise.allSettled(wins.map(w => slot(async () => {
+        const wu = new URL(u.toString());
+        wu.searchParams.set('start_date', w[0]);
+        wu.searchParams.set('end_date', w[w.length - 1]);
+        const r = await orig(wu.toString(), init);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return asRows(await r.json());
+      })));
+      for (let i = 0; i < res.length; i++) {
+        if (res[i].status !== 'fulfilled') { failed++; continue; }
+        if (res[i].value.length >= 200) {
+          const sub = await Promise.allSettled(wins[i].map(dt => dayRows(u.toString(), dt, init)));
+          sub.forEach(x => { if (x.status === 'fulfilled') rows = rows.concat(x.value); else failed++; });
+        } else rows = rows.concat(res[i].value);
+      }
+    }
+
+    if (failed) {
+      try {
+        const r = await orig(input, init);
+        if (r.ok) rows = rows.concat(asRows(await r.json()));
+      } catch (err) {}
+    }
+
+    const out = dedupe(rows);
+    console.log('[ATT RANGE FIX]', s, '→', e, '|', days.length, 'days |', out.length, 'records', failed ? '| fallback used' : '');
+    return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf(MARK) > -1) { cache.clear(); return orig(input, init); }
+    if (url.indexOf(EP) === -1) return orig(input, init);
+    let u;
+    try { u = new URL(url, location.href); } catch (err) { return orig(input, init); }
+    const s = u.searchParams.get('start_date'), e = u.searchParams.get('end_date');
+    if (!s || !e || s === e) return orig(input, init);
+    const d0 = new Date(s + 'T00:00:00'), d1 = new Date(e + 'T00:00:00');
+    if (isNaN(d0.getTime()) || isNaN(d1.getTime()) || d1 < d0) return orig(input, init);
+    return handleRange(input, init, u);
+  };
+
+  document.addEventListener('click', ev => {
+    const b = ev.target && ev.target.closest && ev.target.closest('#m-refresh');
+    if (b) cache.clear();
+  }, true);
+  window.__attRangeCacheClear = () => cache.clear();
+})();
+</script>
+
 
 
 
