@@ -8849,7 +8849,289 @@ async function saveAttRecord() {
 })();
 </script>
 
+<script>
+/* ===== Yearly % engine — credit ÷ marked days, Absent = 0, auto-recalculates ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('access_token') });
+  const UK = 'e360-workday-unlocks', BK = 'e360-yearly-basis';
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const CREDIT = { 'Present': 1, 'Late': 1, 'WFH': 1, 'Casual Leave': 1, 'Sick Leave': 1, 'Half-Day': 0.5, 'Absent': 0 };
+  const YC = {};
+  let basis = 'marked', tok = 0, busy = false, prog = 0, err = null, q = '';
+  try { const b = localStorage.getItem(BK); if (b === 'working' || b === 'marked') basis = b; } catch (e) {}
 
+  const pad = n => String(n).padStart(2, '0');
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : 'Saturday' }; } };
+  const canon = s => {
+    if (s == null) return null;
+    const t = String(s).trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+    const M = { 'present': 'Present', 'p': 'Present', 'late': 'Late', 'l': 'Late', 'half day': 'Half-Day', 'halfday': 'Half-Day', 'hd': 'Half-Day', 'wfh': 'WFH', 'work from home': 'WFH', 'casual leave': 'Casual Leave', 'cl': 'Casual Leave', 'sick leave': 'Sick Leave', 'sl': 'Sick Leave', 'absent': 'Absent', 'a': 'Absent', 'unmarked': 'Unmarked' };
+    return M[t] || String(s).trim();
+  };
+  const f1 = v => (v % 1 ? v.toFixed(1) : String(v));
+  const yearNow = () => { const s = document.getElementById('yearly-year-select'); return Number(s && s.value) || new Date().getFullYear(); };
+
+  async function people() {
+    let list = A().users || [];
+    if (list.length) return list;
+    try { if (typeof employees !== 'undefined' && employees.length) return employees; } catch (e) {}
+    const r = await fetch(API + '/users?page_size=100', { headers: HDR() });
+    if (!r.ok) throw new Error('Users API ' + r.status);
+    const d = await r.json();
+    list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => {
+      let sh = 'morning', st = '09:00';
+      if (u.custom_shift_start) { st = String(u.custom_shift_start).slice(0, 5); sh = st.startsWith('13') ? 'afternoon' : st.startsWith('09') ? 'morning' : 'exceptions'; }
+      return { id: String(u.id), name: u.full_name, shift: sh, start: st };
+    });
+    if (typeof att !== 'undefined') att.users = list;
+    try { employees = list; } catch (e) {}
+    return list;
+  }
+
+  async function loadYear(year, force) {
+    const c = YC[year];
+    if (c && !force && Date.now() - c.at < 60000) return c;
+    const my = ++tok; busy = true; prog = 0; err = null; chrome();
+    const spans = [['01-01', '03-31'], ['04-01', '06-30'], ['07-01', '09-30'], ['10-01', '12-31']];
+    const data = {}; let ok = 0, done = 0;
+    await Promise.all(spans.map(async ([a, b]) => {
+      try {
+        const r = await fetch(`${API}/attendance/team-attendance?start_date=${year}-${a}&end_date=${year}-${b}`, { headers: HDR() });
+        if (r.ok) {
+          const rows = await r.json();
+          (Array.isArray(rows) ? rows : []).forEach(it => {
+            const d = String(it.date).slice(0, 10);
+            (data[d] = data[d] || {})[String(it.employee_id)] = { status: canon(it.status) };
+          });
+          ok++;
+        }
+      } catch (e) {}
+      done++;
+      if (my === tok) { prog = Math.round(done / spans.length * 100); chrome(); }
+    }));
+    if (my !== tok) return YC[year] || { data: {}, at: 0 };
+    busy = false; prog = 100;
+    if (!ok) err = 'Could not load attendance for ' + year + '.';
+    const R = A().records = A().records || {};
+    Object.keys(data).forEach(d => { R[d] = R[d] || {}; Object.keys(data[d]).forEach(id => { R[d][id] = Object.assign({}, R[d][id], { status: data[d][id].status }); }); });
+    YC[year] = { data, at: Date.now() };
+    return YC[year];
+  }
+
+  function months(year) {
+    const u = unlocks(), out = [];
+    for (let m = 0; m < 12; m++) {
+      const dim = new Date(year, m + 1, 0).getDate(), days = [];
+      for (let d = 1; d <= dim; d++) {
+        const ds = year + '-' + pad(m + 1) + '-' + pad(d), i = info(ds);
+        const off = !!i.isHoliday && !u[ds];
+        days.push({ ds, off, working: !off, name: i.name });
+      }
+      out.push({ m, days, working: days.filter(x => x.working).length });
+    }
+    return out;
+  }
+
+  function calc(emp, mo, data) {
+    let marked = 0, credit = 0, P = 0, L = 0, HD = 0, W = 0, CL = 0, SL = 0, AB = 0;
+    mo.days.forEach(x => {
+      if (!x.working) return;
+      const rec = data[x.ds] && data[x.ds][String(emp.id)];
+      const st = canon(rec && rec.status);
+      if (!st || CREDIT[st] === undefined) return;
+      marked++; credit += CREDIT[st];
+      if (st === 'Present') P++; else if (st === 'Late') L++; else if (st === 'Half-Day') HD++;
+      else if (st === 'WFH') W++; else if (st === 'Casual Leave') CL++; else if (st === 'Sick Leave') SL++; else AB++;
+    });
+    const den = marked === 0 ? 0 : (basis === 'marked' ? marked : mo.working);
+    return { marked, credit, working: mo.working, den, pct: den > 0 ? credit / den * 100 : null, P, L, HD, W, CL, SL, AB };
+  }
+
+  const tone = p => p == null ? 'bg-slate-100 text-slate-400'
+    : p >= 95 ? 'bg-emerald-100 text-emerald-800'
+    : p >= 85 ? 'bg-lime-100 text-lime-800'
+    : p >= 75 ? 'bg-amber-100 text-amber-800'
+    : 'bg-rose-100 text-rose-700';
+
+  function ensure() {
+    const sec = document.getElementById('view-yearly');
+    if (!sec) return false;
+    const tb = sec.querySelector('table');
+    if (!tb) return false;
+    const card = tb.closest('.bg-white');
+    if (card) card.classList.add('y-accent');
+    const sc = tb.closest('.overflow-x-auto'); if (sc) sc.classList.add('y-scroll');
+    const tab = document.getElementById('tab-yearly'); if (tab) tab.textContent = 'Yearly Report';
+    const old = document.getElementById('y-toolbar'); if (old) old.remove();
+    if (card && card.parentNode) {
+      const bar = document.createElement('div');
+      bar.id = 'y-toolbar';
+      bar.className = 'bg-white rounded-2xl shadow-sm border border-slate-200 px-4 py-3 space-y-2.5';
+      bar.innerHTML =
+        '<div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">' +
+          '<div class="flex items-center gap-2 shrink-0">' +
+            '<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Percentage out of</span>' +
+            '<div class="flex bg-slate-100 p-1 rounded-xl"><button id="y-b-marked" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all">Marked days</button><button id="y-b-working" class="px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all">All working days</button></div>' +
+          '</div>' +
+          '<div class="flex-1 min-w-[200px]">' +
+            '<div class="flex items-center justify-between text-[11px] font-bold mb-1 gap-2"><span id="y-cover" class="text-slate-500">Loading…</span><span id="y-pct" class="text-indigo-600 tabular-nums shrink-0"></span></div>' +
+            '<div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><i id="y-bar" class="block h-full rounded-full transition-all duration-500" style="width:0%;background:linear-gradient(90deg,#8b5cf6,#4f46e5,#10b981)"></i></div>' +
+          '</div>' +
+          '<button id="y-refresh" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors">↻ Refresh year</button>' +
+        '</div>' +
+        '<div id="y-note" class="text-[11px] font-semibold text-slate-500 leading-relaxed"></div>';
+      card.parentNode.insertBefore(bar, card);
+      document.getElementById('y-b-marked').onclick = () => { basis = 'marked'; try { localStorage.setItem(BK, basis); } catch (e) {} draw(); };
+      document.getElementById('y-b-working').onclick = () => { basis = 'working'; try { localStorage.setItem(BK, basis); } catch (e) {} draw(); };
+      document.getElementById('y-refresh').onclick = async () => { const y = yearNow(); await loadYear(y, true); draw(); };
+    }
+    return true;
+  }
+
+  function chrome(tot) {
+    const cov = document.getElementById('y-cover'), pct = document.getElementById('y-pct'), bar = document.getElementById('y-bar'), btn = document.getElementById('y-refresh');
+    const on = 'px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all bg-white shadow-sm text-slate-800';
+    const off = 'px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all text-slate-500 hover:text-slate-800';
+    const bm = document.getElementById('y-b-marked'), bw = document.getElementById('y-b-working');
+    if (bm) bm.className = basis === 'marked' ? on : off;
+    if (bw) bw.className = basis === 'working' ? on : off;
+    if (!cov) return;
+    if (busy) { cov.textContent = 'Loading year…'; cov.className = 'text-indigo-600'; pct.textContent = prog + '%'; bar.style.width = Math.max(6, prog) + '%'; if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); } return; }
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+    if (err) { cov.textContent = err; cov.className = 'text-rose-600'; pct.textContent = ''; bar.style.width = '0%'; return; }
+    if (!tot) { cov.textContent = 'Ready'; pct.textContent = ''; bar.style.width = '100%'; return; }
+    const p = tot.working ? Math.round(tot.marked / tot.working * 100) : 0;
+    cov.textContent = tot.months + ' month' + (tot.months === 1 ? '' : 's') + ' with data · ' + tot.marked + ' marked employee-days · ' + tot.unmarked + ' working days not marked · ' + tot.absent + ' absent';
+    cov.className = 'text-slate-500';
+    pct.textContent = p + '% coverage';
+    bar.style.width = p + '%';
+  }
+
+  async function draw() {
+    if (!ensure()) return;
+    const year = yearNow();
+    const head = document.querySelector('#view-yearly thead tr');
+    const tbody = document.getElementById('yearly-table-body');
+    if (!head || !tbody) return;
+    let list;
+    try { list = await people(); } catch (e) { err = e.message; chrome(); tbody.innerHTML = '<tr><td colspan="14" class="p-6 text-center text-rose-600 font-bold text-sm">' + esc(e.message) + '</td></tr>'; return; }
+    const sBox = document.getElementById('yearly-search');
+    q = (sBox ? sBox.value : '').toLowerCase().trim();
+    const shown = list.filter(e => !q || String(e.name || '').toLowerCase().includes(q) || String(e.id).includes(q));
+    const MO = months(year), data = (YC[year] && YC[year].data) || {};
+    const yearWorking = MO.reduce((a, m) => a + m.working, 0);
+
+    head.innerHTML = '<th class="py-3 px-4 sticky left-0 bg-slate-50 z-20 border-r border-slate-200 min-w-[200px] text-xs font-bold text-slate-500 uppercase tracking-wider">Employee</th>' +
+      MO.map(m => '<th class="py-2 px-2 text-center min-w-[62px] text-xs font-bold text-slate-500 uppercase tracking-wider"><div>' + MON[m.m] + '</div><div class="text-[9px] font-semibold normal-case text-slate-400">' + m.working + ' wd</div></th>').join('') +
+      '<th class="py-3 px-4 text-center bg-slate-100 text-xs font-bold text-slate-600 uppercase tracking-wider border-l border-slate-200">Yearly Avg</th>';
+
+    let tP = 0, tL = 0, tH = 0, tC = 0, tS = 0, tPay = 0, tMarked = 0, tWorking = 0, tAbs = 0, activeMonths = new Set(), rows = '';
+    shown.forEach(emp => {
+      let sumCredit = 0, sumDen = 0, sumMarked = 0, sumWorking = 0, cells = '';
+      MO.forEach(mo => {
+        const r = calc(emp, mo, data);
+        if (r.marked > 0) {
+          activeMonths.add(mo.m);
+          sumCredit += r.credit; sumDen += r.den; sumMarked += r.marked; sumWorking += r.working;
+          tP += r.P + r.W; tL += r.L; tH += r.HD; tC += r.CL; tS += r.SL; tPay += r.credit; tAbs += r.AB;
+        }
+        const partial = r.marked > 0 && r.marked < r.working;
+        const tip = MON[mo.m] + ' ' + year + ' · ' + (r.pct == null ? 'no attendance marked' :
+          f1(r.credit) + ' credit ÷ ' + r.den + (basis === 'marked' ? ' marked days' : ' working days') + ' = ' + Math.round(r.pct) + '%') +
+          ' · marked ' + r.marked + '/' + r.working + ' working days' +
+          ' · P ' + r.P + ' · L ' + r.L + ' · HD ' + r.HD + ' · WFH ' + r.W + ' · CL ' + r.CL + ' · SL ' + r.SL + ' · Absent ' + r.AB;
+        cells += '<td title="' + esc(tip) + '" data-month="' + (mo.m + 1) + '" class="py-2 px-2 text-center cursor-pointer hover:bg-indigo-50/70 transition-colors">' +
+          '<span class="inline-block min-w-[42px] px-1.5 py-0.5 rounded font-bold text-[11px] ' + tone(r.pct) + '">' + (r.pct == null ? '-' : Math.round(r.pct) + '%') + '</span>' +
+          '<div class="text-[9px] font-semibold mt-0.5 ' + (r.marked === 0 ? 'text-slate-300' : partial ? 'text-amber-600' : 'text-slate-400') + '">' + (r.marked === 0 ? '—' : r.marked + '/' + r.working) + '</div></td>';
+      });
+      tMarked += sumMarked; tWorking += sumWorking;
+      const avg = sumDen > 0 ? sumCredit / sumDen * 100 : null;
+      rows += '<tr class="hover:bg-slate-50 transition-colors">' +
+        '<td class="py-2.5 px-4 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap"><div class="text-xs font-bold text-slate-800">' + esc(emp.name) + '</div><div class="text-[10px] text-slate-400 font-normal">#' + esc(emp.id) + '</div></td>' +
+        cells +
+        '<td class="py-2.5 px-4 text-center bg-slate-50 border-l border-slate-200"><span class="inline-block min-w-[46px] px-2 py-0.5 rounded font-extrabold text-xs ' + tone(avg) + '">' + (avg == null ? '-' : Math.round(avg) + '%') + '</span><div class="text-[9px] font-semibold text-slate-400 mt-0.5">' + (sumDen ? f1(sumCredit) + '/' + sumDen : '—') + '</div></td></tr>';
+    });
+    tbody.innerHTML = rows || '<tr><td colspan="14" class="p-6 text-center text-slate-500 text-sm">No employees match your search.</td></tr>';
+    tbody.querySelectorAll('[data-month]').forEach(td => td.onclick = () => {
+      const p = document.getElementById('monthly-picker');
+      if (p) p.value = year + '-' + pad(Number(td.dataset.month));
+      if (typeof switchTab === 'function') switchTab('monthly');
+      if (typeof renderMonthlyView === 'function') renderMonthlyView();
+    });
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('y-working', yearWorking); set('y-present', tP); set('y-late', tL); set('y-half', tH);
+    set('y-casual', tC); set('y-sick', tS); set('y-payable', f1(tPay));
+    chrome({ months: activeMonths.size, marked: tMarked, working: tWorking, unmarked: Math.max(0, tWorking - tMarked), absent: tAbs });
+
+    const note = document.getElementById('y-note');
+    if (note) {
+      const active = [...activeMonths].sort((a, b) => a - b).map(m => MON[m]).join(', ') || 'none';
+      note.innerHTML = '<b class="text-slate-700">' + year + '</b> is judged on <b class="text-indigo-700">' + active + '</b> only — months with no marks show “—” and are left out. ' +
+        'Present / Late / WFH / Casual / Sick = <b>1</b>, Half-Day = <b>0.5</b>, <b class="text-rose-600">Absent = 0</b>. ' +
+        (basis === 'marked'
+          ? 'Unmarked working days are <b>excluded</b>, so the % is out of days you actually marked (amber fraction = month is only partly marked).'
+          : 'Unmarked working days count as <b>0</b>, so the % is out of every working day in those months.') +
+        ' Mark more months and this recalculates automatically. Click any month to open it.';
+    }
+  }
+
+  window.renderYearlyView = function (sync) {
+    if (!ensure()) return;
+    const y = yearNow();
+    draw();
+    if (sync === false) { chrome(); return; }
+    loadYear(y, false).then(() => { if (yearNow() === y) draw(); });
+  };
+
+  window.exportYearlyExcel = async function () {
+    if (typeof XLSX === 'undefined') return;
+    const year = yearNow();
+    await loadYear(year, false);
+    const list = await people(), MO = months(year), data = (YC[year] && YC[year].data) || {};
+    const wb = XLSX.utils.book_new();
+    const head = [['Employee360 — Yearly Attendance ' + year], ['Percentage basis: ' + (basis === 'marked' ? 'marked days only' : 'all working days of months with data') + ' · Absent = 0 · Half-Day = 0.5'], [],
+      ['ID', 'Name', ...MON.map(m => m + ' %'), ...MON.map(m => m + ' marked/working'), 'Credit', 'Denominator', 'Yearly %', 'Absent', 'Present', 'Late', 'Half-Day', 'WFH', 'Casual', 'Sick']];
+    const detail = [['Month detail — ' + year], [], ['ID', 'Name', 'Month', 'Working days', 'Marked days', 'Credit', 'Denominator', 'Percent', 'Present', 'Late', 'Half-Day', 'WFH', 'Casual', 'Sick', 'Absent']];
+    list.forEach(emp => {
+      const pcts = [], frac = []; let sc = 0, sd = 0, ab = 0, P = 0, L = 0, H = 0, W = 0, C = 0, S = 0;
+      MO.forEach(mo => {
+        const r = calc(emp, mo, data);
+        pcts.push(r.pct == null ? '-' : Math.round(r.pct) + '%');
+        frac.push(r.marked + '/' + r.working);
+        if (r.marked > 0) {
+          sc += r.credit; sd += r.den; ab += r.AB; P += r.P; L += r.L; H += r.HD; W += r.W; C += r.CL; S += r.SL;
+          detail.push([emp.id, emp.name, MON[mo.m], r.working, r.marked, r.credit, r.den, Math.round(r.pct) + '%', r.P, r.L, r.HD, r.W, r.CL, r.SL, r.AB]);
+        }
+      });
+      head.push([emp.id, emp.name, ...pcts, ...frac, sc, sd, sd ? Math.round(sc / sd * 100) + '%' : '-', ab, P, L, H, W, C, S]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(head), 'Yearly ' + year);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detail), 'Month detail');
+    XLSX.writeFile(wb, 'Yearly_Attendance_' + year + '.xlsx');
+    if (typeof showStandardToast === 'function') showStandardToast('Yearly report exported (' + (basis === 'marked' ? 'marked days' : 'all working days') + ' basis).');
+  };
+
+  const prevTab = window.switchTab;
+  if (typeof prevTab === 'function') window.switchTab = function (t) { const r = prevTab.apply(this, arguments); if (t === 'yearly') setTimeout(() => window.renderYearlyView(), 20); return r; };
+  document.addEventListener('change', e => { if (e.target && e.target.id === 'yearly-year-select') window.renderYearlyView(); }, true);
+  document.addEventListener('input', e => { if (e.target && e.target.id === 'yearly-search') draw(); }, true);
+
+  const st = document.createElement('style');
+  st.textContent = '.y-scroll{scrollbar-width:thin;scrollbar-color:#a5b4fc #f1f5f9}' +
+    '.y-scroll::-webkit-scrollbar{height:11px;width:11px}' +
+    '.y-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}' +
+    '.y-scroll::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#a78bfa,#818cf8);border-radius:99px;border:2px solid #f1f5f9;background-clip:content-box}' +
+    '.y-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,#8b5cf6,#4f46e5);background-clip:content-box}' +
+    '.y-accent{position:relative}.y-accent::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#8b5cf6,#4f46e5,#0ea5e9,#10b981);z-index:30}';
+  document.head.appendChild(st);
+
+  setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'yearly') window.renderYearlyView(); } catch (e) {} }, 900);
+})();
+</script>
 
 
 </body>
