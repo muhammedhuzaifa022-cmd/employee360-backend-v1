@@ -8226,14 +8226,14 @@ async function saveAttRecord() {
   setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'monthly') window.renderMonthlyView(); } catch (e) {} }, 900);
 })();
 </script>
+
 <script>
-/* ===== Monthly Excel Export — separate styled workbook per shift ===== */
+/* ===== Monthly Excel Export — YOUR grid format, one file per shift ===== */
 (function () {
   const API = 'https://employee360-backend-v1.onrender.com/api/v1';
   const CDN = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
-  const HDR = j => { const h = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }; if (j) h['Content-Type'] = 'application/json'; return h; };
   const UK = 'e360-workday-unlocks';
-  let libP = null, working = false;
+  let libP = null, busy = false;
 
   const pad = n => String(n).padStart(2, '0');
   const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
@@ -8243,8 +8243,8 @@ async function saveAttRecord() {
     const p = s.split(':'), h = parseInt(p[0], 10), m = parseInt(p[1] || '0', 10);
     return (Number.isFinite(h) && Number.isFinite(m)) ? h * 60 + m : null;
   };
-  const f12 = m => m == null ? '—' : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
   const hhmm = m => m == null ? '' : pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  const f12 = m => m == null ? '—' : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
   const dur = m => m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
   const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
   const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : 'Saturday' }; } };
@@ -8253,24 +8253,16 @@ async function saveAttRecord() {
   const baseStart = e => { const v = toMin(e && (e._baseStart || e.start)); return v == null ? (kindOf(e) === 'afternoon' ? 780 : 540) : v; };
   const startOn = (e, ds) => (kindOf(e) === 'afternoon' && String(ds).slice(5, 7) === '10') ? 720 : baseStart(e);
   const SH = {
-    morning: { name: 'Morning Shift', file: 'Morning-Shift', tint: 'FFFFF7ED', accent: 'FFB45309' },
-    afternoon: { name: 'Afternoon Shift', file: 'Afternoon-Shift', tint: 'FFF5F3FF', accent: 'FF6D28D9' },
-    exceptions: { name: 'Exceptions (Custom)', file: 'Exceptions-Custom', tint: 'FFECFEFF', accent: 'FF0E7490' }
+    morning: { name: 'Morning Shift', file: 'Morning-Shift', icon: '🌅' },
+    afternoon: { name: 'Afternoon Shift', file: 'Afternoon-Shift', icon: '🌇' },
+    exceptions: { name: 'Exceptions (Custom)', file: 'Exceptions-Custom', icon: '⚙️' }
   };
-  const PAL = {
-    P: { code: 'P', label: 'Present', fill: 'FFDCFCE7', font: 'FF15803D', pay: 1 },
-    L: { code: 'L', label: 'Late', fill: 'FFFEE2E2', font: 'FFB91C1C', pay: 1 },
-    HD: { code: 'HD', label: 'Half-Day', fill: 'FFFFEDD5', font: 'FFC2410C', pay: 0.5 },
-    WFH: { code: 'WFH', label: 'WFH', fill: 'FFDBEAFE', font: 'FF1D4ED8', pay: 1 },
-    CL: { code: 'CL', label: 'Casual Leave', fill: 'FFFEF9C3', font: 'FFA16207', pay: 1 },
-    SL: { code: 'SL', label: 'Sick Leave', fill: 'FFF3E8FF', font: 'FF7E22CE', pay: 1 },
-    A: { code: 'A', label: 'Absent', fill: 'FFFECACA', font: 'FF7F1D1D', pay: 0 },
-    H: { code: 'H', label: 'Holiday / Weekend', fill: 'FFEDE9FE', font: 'FF6D28D9', pay: 0 },
-    U: { code: '–', label: 'Unmarked', fill: 'FFF8FAFC', font: 'FF94A3B8', pay: 0 }
+  const C = {
+    off: 'FFFFC000', late: 'FFFF0000', half: 'FFED7D31', pOnly: 'FF00B0F0',
+    absent: 'FFC00000', wfh: 'FFDDEBF7', wfhInk: 'FF1F4E79',
+    green: 'FF008000', ink: 'FF000000', white: 'FFFFFFFF',
+    head: 'FFD9D9D9', sumHead: 'FFBDD7EE', zebra: 'FFF7F9FC', mute: 'FF808080'
   };
-  const MAP = { 'Present': 'P', 'Late': 'L', 'Half-Day': 'HD', 'WFH': 'WFH', 'Casual Leave': 'CL', 'Sick Leave': 'SL', 'Absent': 'A' };
-  const keyOf = (rec, off) => off ? 'H' : (!rec || !rec.status || rec.status === 'Unmarked' ? 'U' : (MAP[rec.status] || 'U'));
-  const LEGEND = ['P', 'L', 'HD', 'WFH', 'CL', 'SL', 'A', 'H', 'U'];
 
   function loadLib() {
     if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
@@ -8288,7 +8280,7 @@ async function saveAttRecord() {
   async function people() {
     let list = A().users || [];
     if (list.length) return list;
-    const r = await fetch(API + '/users?page_size=100', { headers: HDR() });
+    const r = await fetch(API + '/users?page_size=100', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
     if (!r.ok) throw new Error('Users API ' + r.status);
     const d = await r.json();
     list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => {
@@ -8301,22 +8293,19 @@ async function saveAttRecord() {
   }
 
   async function monthData(month, onProg) {
+    const H = { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') };
     const [y, m] = month.split('-').map(Number);
     const dim = new Date(y, m, 0).getDate(), size = Math.ceil(dim / 4), chunks = [];
     for (let s = 1; s <= dim; s += size) chunks.push([month + '-' + pad(s), month + '-' + pad(Math.min(dim, s + size - 1))]);
     const data = {}; let done = 0, ok = 0;
     await Promise.all(chunks.map(async ([a, b]) => {
       try {
-        const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: HDR() });
+        const r = await fetch(`${API}/attendance/team-attendance?start_date=${a}&end_date=${b}`, { headers: H });
         if (r.ok) {
           const rows = await r.json();
           (Array.isArray(rows) ? rows : []).forEach(it => {
             const d = String(it.date), id = String(it.employee_id);
-            (data[d] = data[d] || {})[id] = {
-              status: it.status || 'Unmarked',
-              in: toMin(it.check_in != null ? it.check_in : it.checkIn),
-              out: toMin(it.check_out != null ? it.check_out : it.checkOut)
-            };
+            (data[d] = data[d] || {})[id] = { status: it.status || 'Unmarked', in: toMin(it.check_in != null ? it.check_in : it.checkIn), out: toMin(it.check_out != null ? it.check_out : it.checkOut) };
           });
           ok++;
         }
@@ -8340,252 +8329,243 @@ async function saveAttRecord() {
     return { data, meta, dim, working: meta.filter(x => x.working).length };
   }
 
-  /* ---------- Excel helpers ---------- */
+  /* cell decision: time in the cell, colour by punctuality */
+  function plan(emp, x, rec) {
+    if (x.off) return { fill: C.off, text: null, note: x.name || 'Weekend' };
+    if (!rec || !rec.status || rec.status === 'Unmarked') return { fill: null, text: null };
+    const st = rec.status, sh = startOn(emp, x.ds), d = rec.in == null ? null : rec.in - sh;
+    const lateNote = d == null ? '' : (d > 0 ? 'Late by ' + dur(d) : d < 0 ? dur(-d) + ' early' : 'On time');
+    if (st === 'Sick Leave' || st === 'Casual Leave') return { fill: C.late, color: C.white, text: 'Leave', bold: true, note: st };
+    if (st === 'Absent') return { fill: C.absent, color: C.white, text: 'A', bold: true, note: 'Absent' };
+    if (st === 'WFH') return { fill: C.wfh, color: C.wfhInk, time: rec.in, text: rec.in == null ? 'WFH' : null, bold: true, note: 'Work From Home' + (lateNote ? ' · ' + lateNote : '') };
+    if (st === 'Half-Day') return { fill: C.half, color: C.white, time: rec.in, text: rec.in == null ? 'HD' : null, bold: true, note: 'Half-Day' + (lateNote ? ' · ' + lateNote : '') };
+    if (rec.in != null) {
+      if (d > 180) return { fill: C.half, color: C.white, time: rec.in, bold: true, note: 'Half-Day · ' + lateNote };
+      if (d > 5) return { fill: C.late, color: C.white, time: rec.in, bold: true, note: 'Late · ' + lateNote };
+      return { fill: null, color: C.green, time: rec.in, bold: false, note: 'Present · ' + lateNote };
+    }
+    if (st === 'Late') return { fill: C.late, color: C.white, text: 'L', bold: true, note: 'Late (no time recorded)' };
+    return { fill: C.pOnly, color: C.white, text: 'P', bold: true, note: 'Present (no check-in time recorded)' };
+  }
+
   const L = n => { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - r - 1) / 26; } return s; };
   const solid = a => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: a } });
-  const BOX = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+  const BOX = { top: { style: 'thin', color: { argb: 'FF000000' } }, left: { style: 'thin', color: { argb: 'FF000000' } }, bottom: { style: 'thin', color: { argb: 'FF000000' } }, right: { style: 'thin', color: { argb: 'FF000000' } } };
   const CTR = { horizontal: 'center', vertical: 'middle' };
-  const put = (ws, r, c, v, o) => {
+  const LEFT = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  const tv = m => m == null ? null : m / 1440;
+
+  function put(ws, r, c, v, o) {
     const cell = ws.getCell(r, c);
     cell.value = v;
-    if (o) {
-      if (o.fill) cell.fill = solid(o.fill);
-      if (o.font || o.size || o.bold || o.color || o.italic) cell.font = { name: 'Calibri', size: o.size || 10, bold: !!o.bold, italic: !!o.italic, color: { argb: o.color || 'FF0F172A' } };
-      if (o.align) cell.alignment = o.align;
-      if (o.fmt) cell.numFmt = o.fmt;
-      if (o.box !== false) cell.border = BOX;
-    }
+    o = o || {};
+    if (o.fill) cell.fill = solid(o.fill);
+    cell.font = { name: 'Calibri', size: o.size || 10, bold: !!o.bold, color: { argb: o.color || C.ink } };
+    cell.alignment = o.align || CTR;
+    cell.border = BOX;
+    if (o.fmt) cell.numFmt = o.fmt;
+    if (o.note) cell.note = o.note;
     return cell;
-  };
-  const band = (ws, r, c1, c2, text, o) => {
+  }
+  function merge(ws, r, c1, c2, text, o) {
     ws.mergeCells(r, c1, r, c2);
-    for (let c = c1; c <= c2; c++) { const cell = ws.getCell(r, c); if (o.fill) cell.fill = solid(o.fill); }
+    for (let c = c1; c <= c2; c++) { const x = ws.getCell(r, c); if (o.fill) x.fill = solid(o.fill); x.border = BOX; }
     const cell = ws.getCell(r, c1);
     cell.value = text;
-    cell.font = { name: 'Calibri', size: o.size || 11, bold: o.bold !== false, color: { argb: o.color || 'FFFFFFFF' } };
-    cell.alignment = { horizontal: o.align || 'left', vertical: 'middle', indent: 1 };
-    ws.getRow(r).height = o.height || 22;
-  };
-  const timeVal = m => m == null ? null : m / 1440;
+    cell.font = { name: 'Calibri', size: o.size || 11, bold: o.bold !== false, color: { argb: o.color || C.ink } };
+    cell.alignment = o.align || CTR;
+    ws.getRow(r).height = o.height || 20;
+  }
 
-  function stats(list, meta, data, month) {
+  function tally(list, meta, data, month) {
     return list.map(emp => {
-      const s = { emp, pay: 0, P: 0, L: 0, HD: 0, WFH: 0, CL: 0, SL: 0, A: 0, U: 0, marked: 0, lateMin: 0, ins: [] };
+      const s = { emp, P: 0, L: 0, HD: 0, WFH: 0, LV: 0, A: 0, U: 0, pay: 0, lateMin: 0, ins: [] };
       meta.forEach(x => {
-        const rec = data[x.ds] && data[x.ds][String(emp.id)];
-        const k = keyOf(rec, x.off);
         if (!x.working) return;
-        s[k] = (s[k] || 0) + 1;
-        if (k !== 'U') s.marked++;
-        s.pay += PAL[k].pay;
-        if (rec && rec.in != null) {
-          s.ins.push(rec.in);
-          const d = rec.in - startOn(emp, x.ds);
-          if (d > 5) s.lateMin += d;
-        }
+        const rec = data[x.ds] && data[x.ds][String(emp.id)];
+        const p = plan(emp, x, rec);
+        if (p.fill === C.late && p.text === 'Leave') { s.LV++; s.pay += 1; }
+        else if (p.fill === C.absent) { s.A++; }
+        else if (p.fill === C.half) { s.HD++; s.pay += 0.5; }
+        else if (p.fill === C.late) { s.L++; s.pay += 1; }
+        else if (p.fill === C.wfh) { s.WFH++; s.pay += 1; }
+        else if (p.fill === C.pOnly || p.time != null) { s.P++; s.pay += 1; }
+        else { s.U++; }
+        if (rec && rec.in != null) { s.ins.push(rec.in); const d = rec.in - startOn(emp, x.ds); if (d > 5) s.lateMin += d; }
       });
-      s.att = meta.filter(x => x.working).length ? s.marked / meta.filter(x => x.working).length : 0;
+      s.att = s.ins.length || s.P + s.L + s.HD + s.WFH + s.LV ? (s.P + s.L + s.HD * 0.5 + s.WFH + s.LV) / Math.max(1, meta.filter(x => x.working).length) : 0;
       s.avg = s.ins.length ? Math.round(s.ins.reduce((a, b) => a + b, 0) / s.ins.length) : null;
-      s.min = s.ins.length ? Math.min.apply(null, s.ins) : null;
-      s.max = s.ins.length ? Math.max.apply(null, s.ins) : null;
       return s;
     });
   }
 
-  function matrixSheet(wb, cfg) {
-    const { title, meta, rows, month, shift, mode, startLabel } = cfg;
-    const dim = meta.length, sumCols = mode === 'time'
-      ? ['Avg In', 'Earliest', 'Latest', 'Late Days', 'Late Min']
-      : ['Payable', 'Working', 'P', 'L', 'HD', 'CL', 'SL', 'A', '–', 'Att %'];
-    const last = 3 + dim + sumCols.length;
-    const ws = wb.addWorksheet(title, {
-      views: [{ state: 'frozen', xSplit: 3, ySplit: 7, topLeftCell: 'D8', activeCell: 'D8' }],
-      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:7', margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } },
-      properties: { defaultRowHeight: 19 }
+  /* ---------- MAIN SHEET: your exact grid ---------- */
+  function gridSheet(wb, cfg) {
+    const { meta, rows, monthLabel, shift, data, month, working } = cfg;
+    const dim = meta.length;
+    const SUM = ['Present', 'Late', 'Half', 'Leave', 'Absent', 'Not Marked', 'Payable', 'Working', 'Att %', 'Avg In', 'Late Min'];
+    const dayEnd = 2 + dim, last = dayEnd + SUM.length;
+    const ws = wb.addWorksheet('Daily Attendance', {
+      views: [{ state: 'frozen', xSplit: 2, ySplit: 2, topLeftCell: 'C3', activeCell: 'C3' }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:2', margins: { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 } },
+      properties: { defaultRowHeight: 18 }
     });
-    ws.getColumn(1).width = 7; ws.getColumn(2).width = 27; ws.getColumn(3).width = 11.5;
-    for (let i = 0; i < dim; i++) ws.getColumn(4 + i).width = mode === 'time' ? 8.4 : 6.4;
-    sumCols.forEach((s, i) => ws.getColumn(4 + dim + i).width = s === 'Att %' ? 9.5 : 10.5);
+    ws.getColumn(1).width = 4.5;
+    ws.getColumn(2).width = 26;
+    for (let i = 0; i < dim; i++) ws.getColumn(3 + i).width = 6.4;
+    SUM.forEach((s, i) => ws.getColumn(dayEnd + 1 + i).width = s === 'Not Marked' ? 11 : s === 'Late Min' ? 10 : 9.5);
 
-    band(ws, 1, 1, last, 'EMPLOYEE360  ·  ' + (mode === 'time' ? 'CHECK-IN TIMES' : 'ATTENDANCE MATRIX'), { fill: 'FF4F46E5', size: 15, height: 32 });
-    band(ws, 2, 1, last, cfg.monthLabel + '   ·   ' + shift.name + '   ·   ' + startLabel + '   ·   ' + rows.length + ' employees', { fill: 'FF3730A3', size: 11, height: 22 });
-    band(ws, 3, 1, last, 'Generated ' + new Date().toLocaleString() + '   ·   ' + cfg.working + ' working days   ·   Late is marked RED   ·   times are 24-hour', { fill: 'FFEEF2FF', color: 'FF3730A3', bold: false, size: 9.5, height: 19 });
+    merge(ws, 1, 1, 2, 'Daily Attendance', { size: 12, height: 22 });
+    merge(ws, 1, 3, dayEnd, monthLabel, { size: 12, height: 22 });
+    merge(ws, 1, dayEnd + 1, last, shift.name + '  ·  Summary', { fill: C.sumHead, size: 11, height: 22 });
 
-    LEGEND.forEach((k, i) => {
-      const p = PAL[k];
-      put(ws, 4, 1 + i, p.code, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR });
-    });
-    ws.mergeCells(4, LEGEND.length + 1, 4, last);
-    put(ws, 4, LEGEND.length + 1, LEGEND.map(k => PAL[k].code + ' = ' + PAL[k].label).join('   ·   '), { fill: 'FFFAFAFF', color: 'FF475569', size: 9, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
-    ws.getRow(4).height = 20;
-    ws.getRow(5).height = 6;
-    band(ws, 6, 1, last, mode === 'time' ? 'Actual arrival time per day — green on time, red late, orange half-day. Leave / holiday days show their code.' : 'Daily status per employee — hover-free, print-ready, filterable.', { fill: 'FFF8FAFC', color: 'FF64748B', bold: false, size: 9, height: 17 });
+    put(ws, 2, 1, '#', { fill: C.head, bold: true, size: 9.5 });
+    put(ws, 2, 2, 'Name of the Employee', { fill: C.head, bold: true, size: 10, align: LEFT });
+    meta.forEach((x, i) => put(ws, 2, 3 + i, x.d, { fill: x.off ? C.off : C.head, bold: true, size: 10 }));
+    SUM.forEach((s, i) => put(ws, 2, dayEnd + 1 + i, s, { fill: C.sumHead, bold: true, size: 9, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    ws.getRow(2).height = 26;
 
-    const H = 7;
-    ['ID', 'Employee', 'Shift Start'].forEach((t, i) => put(ws, H, i + 1, t, { fill: 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9.5, align: CTR }));
-    meta.forEach((x, i) => put(ws, H, 4 + i, x.d + '\n' + x.dow[0], { fill: x.off ? 'FF6D28D9' : 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
-    sumCols.forEach((t, i) => put(ws, H, 4 + dim + i, t, { fill: 'FF4F46E5', color: 'FFFFFFFF', bold: true, size: 9.5, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
-    ws.getRow(H).height = 30;
-
+    const dayAtt = new Array(dim).fill(0), dayLv = new Array(dim).fill(0);
     rows.forEach((s, ri) => {
-      const r = H + 1 + ri, emp = s.emp, z = ri % 2 ? 'FFF8FAFC' : 'FFFFFFFF';
-      put(ws, r, 1, emp.id, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
-      put(ws, r, 2, emp.name, { fill: z, bold: true, size: 10, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
-      put(ws, r, 3, f12(startOn(emp, month + '-01')), { fill: shift.tint, color: shift.accent, bold: true, size: 9, align: CTR });
+      const r = 3 + ri, emp = s.emp, z = ri % 2 ? C.zebra : null;
+      put(ws, r, 1, ri + 1, { fill: z, color: C.mute, size: 9 });
+      put(ws, r, 2, emp.name, { fill: z, size: 10, align: LEFT });
       meta.forEach((x, i) => {
-        const rec = cfg.data[x.ds] && cfg.data[x.ds][String(emp.id)];
-        const k = keyOf(rec, x.off), p = PAL[k];
-        const c = 4 + i;
-        if (mode === 'time') {
-          if (rec && rec.in != null && !x.off) {
-            const d = rec.in - startOn(emp, x.ds);
-            const tone = d <= 5 ? PAL.P : d <= 180 ? PAL.L : PAL.HD;
-            put(ws, r, c, timeVal(rec.in), { fill: tone.fill, color: tone.font, bold: d > 5, size: 9.5, align: CTR, fmt: 'hh:mm' });
-          } else {
-            put(ws, r, c, p.code, { fill: p.fill, color: p.font, bold: true, size: 9, align: CTR });
-          }
-        } else {
-          put(ws, r, c, p.code, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR });
+        const rec = data[x.ds] && data[x.ds][String(emp.id)];
+        const p = plan(emp, x, rec);
+        const val = p.time != null ? tv(p.time) : p.text;
+        put(ws, r, 3 + i, val, { fill: p.fill || z, color: p.color || C.ink, bold: p.bold, size: 9.5, fmt: p.time != null ? 'h:mm' : null, note: p.note });
+        if (x.working) {
+          if (p.text === 'Leave') dayLv[i]++;
+          else if (p.time != null || p.fill === C.pOnly || p.fill === C.wfh || p.fill === C.half || p.fill === C.late) dayAtt[i]++;
         }
       });
-      const b = 4 + dim;
-      if (mode === 'time') {
-        put(ws, r, b, timeVal(s.avg), { fill: 'FFEEF2FF', color: 'FF3730A3', bold: true, size: 9.5, align: CTR, fmt: 'hh:mm' });
-        put(ws, r, b + 1, timeVal(s.min), { fill: 'FFF8FAFC', size: 9.5, align: CTR, fmt: 'hh:mm' });
-        put(ws, r, b + 2, timeVal(s.max), { fill: 'FFF8FAFC', size: 9.5, align: CTR, fmt: 'hh:mm' });
-        put(ws, r, b + 3, s.L + s.HD, { fill: s.L + s.HD ? 'FFFEE2E2' : 'FFF8FAFC', color: s.L + s.HD ? 'FFB91C1C' : 'FF94A3B8', bold: true, size: 9.5, align: CTR });
-        put(ws, r, b + 4, s.lateMin, { fill: s.lateMin ? 'FFFEE2E2' : 'FFF8FAFC', color: s.lateMin ? 'FFB91C1C' : 'FF94A3B8', bold: true, size: 9.5, align: CTR, fmt: '0" min"' });
-      } else {
-        put(ws, r, b, s.pay, { fill: 'FFEEF2FF', color: 'FF3730A3', bold: true, size: 10, align: CTR, fmt: '0.##' });
-        put(ws, r, b + 1, cfg.working, { fill: 'FFF8FAFC', color: 'FF64748B', size: 9.5, align: CTR });
-        ['P', 'L', 'HD', 'CL', 'SL', 'A', 'U'].forEach((k, i) => {
-          const v = s[k] || 0, p = PAL[k];
-          put(ws, r, b + 2 + i, v, { fill: v ? p.fill : 'FFFCFDFE', color: v ? p.font : 'FFCBD5E1', bold: v > 0, size: 9.5, align: CTR });
-        });
-        put(ws, r, b + 9, s.att, { fill: s.att >= 0.92 ? 'FFDCFCE7' : s.att >= 0.75 ? 'FFFFEDD5' : 'FFFEE2E2', color: s.att >= 0.92 ? 'FF15803D' : s.att >= 0.75 ? 'FFC2410C' : 'FFB91C1C', bold: true, size: 10, align: CTR, fmt: '0%' });
-      }
-      ws.getRow(r).height = 20;
+      const b = dayEnd + 1;
+      put(ws, r, b, s.P, { fill: s.P ? 'FFE2EFDA' : z, color: 'FF375623', bold: s.P > 0, size: 9.5 });
+      put(ws, r, b + 1, s.L, { fill: s.L ? 'FFFFC7CE' : z, color: 'FF9C0006', bold: s.L > 0, size: 9.5 });
+      put(ws, r, b + 2, s.HD, { fill: s.HD ? 'FFFCE4D6' : z, color: 'FF833C00', bold: s.HD > 0, size: 9.5 });
+      put(ws, r, b + 3, s.LV, { fill: s.LV ? 'FFFFC7CE' : z, color: 'FF9C0006', bold: s.LV > 0, size: 9.5 });
+      put(ws, r, b + 4, s.A, { fill: s.A ? 'FFFFC7CE' : z, color: 'FF9C0006', bold: s.A > 0, size: 9.5 });
+      put(ws, r, b + 5, s.U, { fill: s.U ? 'FFF2F2F2' : z, color: C.mute, size: 9.5 });
+      put(ws, r, b + 6, s.pay, { fill: 'FFDDEBF7', color: 'FF1F4E79', bold: true, size: 10, fmt: '0.##' });
+      put(ws, r, b + 7, working, { fill: z, color: C.mute, size: 9.5 });
+      put(ws, r, b + 8, s.att, { fill: s.att >= 0.92 ? 'FFE2EFDA' : s.att >= 0.75 ? 'FFFCE4D6' : 'FFFFC7CE', color: s.att >= 0.92 ? 'FF375623' : s.att >= 0.75 ? 'FF833C00' : 'FF9C0006', bold: true, size: 9.5, fmt: '0%' });
+      put(ws, r, b + 9, tv(s.avg), { fill: z, size: 9.5, fmt: 'h:mm' });
+      put(ws, r, b + 10, s.lateMin, { fill: s.lateMin ? 'FFFFC7CE' : z, color: s.lateMin ? 'FF9C0006' : C.mute, bold: !!s.lateMin, size: 9.5, fmt: '0"m"' });
+      ws.getRow(r).height = 18;
     });
-    const endRow = H + rows.length;
-    ws.autoFilter = { from: { row: H, column: 1 }, to: { row: endRow, column: last } };
-    if (mode !== 'time') {
-      ws.addConditionalFormatting({
-        ref: L(4 + dim + 9) + (H + 1) + ':' + L(4 + dim + 9) + endRow,
-        rules: [{ type: 'dataBar', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: 'FF6366F1' }, gradient: true }]
-      });
-    }
-    band(ws, endRow + 2, 1, last, 'Employee360 · ' + shift.name + ' · ' + cfg.monthLabel + ' · Payable: P / L / WFH / CL / SL = 1 day, HD = 0.5 day, A / – = 0. Holidays and weekends are excluded.', { fill: 'FFF1F5F9', color: 'FF64748B', bold: false, size: 9, height: 18 });
-    return ws;
-  }
 
-  function overviewSheet(wb, cfg) {
-    const { rows, shift, month } = cfg;
-    const cols = ['ID', 'Employee', 'Shift Start', 'Payable', 'Working', 'Present', 'Late', 'Half-Day', 'Casual', 'Sick', 'Absent', 'Unmarked', 'Attendance %', 'Avg Check-in', 'Total Late'];
-    const last = cols.length;
-    const ws = wb.addWorksheet('Overview', {
-      views: [{ state: 'frozen', ySplit: 9, xSplit: 2, topLeftCell: 'C10' }],
-      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
-      properties: { defaultRowHeight: 19 }
+    const end = 2 + rows.length;
+    const f1 = end + 2, f2 = end + 3;
+    merge(ws, f1, 1, 2, 'Attended', { fill: C.head, size: 9.5, height: 18 });
+    merge(ws, f2, 1, 2, 'On Leave', { fill: C.head, size: 9.5, height: 18 });
+    meta.forEach((x, i) => {
+      put(ws, f1, 3 + i, x.off ? null : dayAtt[i], { fill: x.off ? C.off : 'FFE2EFDA', color: 'FF375623', bold: true, size: 9 });
+      put(ws, f2, 3 + i, x.off ? null : dayLv[i], { fill: x.off ? C.off : (dayLv[i] ? 'FFFFC7CE' : 'FFF2F2F2'), color: dayLv[i] ? 'FF9C0006' : C.mute, bold: !!dayLv[i], size: 9 });
     });
-    [7, 27, 12, 10, 10, 10, 9, 10, 9, 9, 9, 11, 14, 14, 12].forEach((w, i) => ws.getColumn(i + 1).width = w);
-    band(ws, 1, 1, last, 'EMPLOYEE360  ·  SHIFT OVERVIEW', { fill: 'FF4F46E5', size: 15, height: 32 });
-    band(ws, 2, 1, last, cfg.monthLabel + '   ·   ' + shift.name + '   ·   ' + cfg.startLabel, { fill: 'FF3730A3', size: 11, height: 22 });
-    band(ws, 3, 1, last, 'Generated ' + new Date().toLocaleString(), { fill: 'FFEEF2FF', color: 'FF3730A3', bold: false, size: 9.5, height: 18 });
-    const tot = rows.reduce((a, s) => ({ pay: a.pay + s.pay, marked: a.marked + s.marked, L: a.L + s.L, HD: a.HD + s.HD, P: a.P + s.P, lateMin: a.lateMin + s.lateMin }), { pay: 0, marked: 0, L: 0, HD: 0, P: 0, lateMin: 0 });
-    const slots = [['Employees', rows.length], ['Working days', cfg.working], ['Marked', tot.marked], ['Unmarked', cfg.working * rows.length - tot.marked], ['Present', tot.P], ['Late', tot.L], ['Half-days', tot.HD], ['Payable avg', rows.length ? (tot.pay / rows.length).toFixed(1) : 0], ['Late minutes', tot.lateMin]];
-    slots.forEach((s, i) => {
-      const c = 1 + i * Math.floor(last / slots.length);
-      put(ws, 5, c, s[0].toUpperCase(), { fill: 'FFF1F5F9', color: 'FF64748B', bold: true, size: 8.5, align: CTR });
-      put(ws, 6, c, s[1], { fill: i === 5 || i === 8 ? 'FFFEE2E2' : 'FFEEF2FF', color: i === 5 || i === 8 ? 'FFB91C1C' : 'FF3730A3', bold: true, size: 14, align: CTR });
+    const tot = rows.reduce((a, s) => ({ P: a.P + s.P, L: a.L + s.L, HD: a.HD + s.HD, LV: a.LV + s.LV, A: a.A + s.A, U: a.U + s.U, pay: a.pay + s.pay, lm: a.lm + s.lateMin }), { P: 0, L: 0, HD: 0, LV: 0, A: 0, U: 0, pay: 0, lm: 0 });
+    [tot.P, tot.L, tot.HD, tot.LV, tot.A, tot.U, tot.pay, working * rows.length, null, null, tot.lm].forEach((v, i) => {
+      put(ws, f1, dayEnd + 1 + i, v, { fill: C.sumHead, bold: true, size: 9.5, fmt: i === 6 ? '0.##' : i === 10 ? '0"m"' : null });
     });
-    ws.getRow(5).height = 17; ws.getRow(6).height = 26; ws.getRow(7).height = 6;
-    band(ws, 8, 1, last, 'Per-employee totals — sortable and filterable. Late and Half-Day columns are highlighted in red / orange.', { fill: 'FFF8FAFC', color: 'FF64748B', bold: false, size: 9, height: 17 });
-    cols.forEach((t, i) => put(ws, 9, i + 1, t, { fill: 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9.5, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
-    ws.getRow(9).height = 28;
-    rows.forEach((s, ri) => {
-      const r = 10 + ri, z = ri % 2 ? 'FFF8FAFC' : 'FFFFFFFF';
-      put(ws, r, 1, s.emp.id, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
-      put(ws, r, 2, s.emp.name, { fill: z, bold: true, size: 10, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
-      put(ws, r, 3, f12(startOn(s.emp, month + '-01')), { fill: shift.tint, color: shift.accent, bold: true, size: 9, align: CTR });
-      put(ws, r, 4, s.pay, { fill: 'FFEEF2FF', color: 'FF3730A3', bold: true, size: 10, align: CTR, fmt: '0.##' });
-      put(ws, r, 5, cfg.working, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
-      [['P', 6], ['L', 7], ['HD', 8], ['CL', 9], ['SL', 10], ['A', 11], ['U', 12]].forEach(([k, c]) => {
-        const v = s[k] || 0, p = PAL[k];
-        put(ws, r, c, v, { fill: v ? p.fill : 'FFFCFDFE', color: v ? p.font : 'FFCBD5E1', bold: v > 0, size: 9.5, align: CTR });
-      });
-      put(ws, r, 13, s.att, { fill: s.att >= 0.92 ? 'FFDCFCE7' : s.att >= 0.75 ? 'FFFFEDD5' : 'FFFEE2E2', color: s.att >= 0.92 ? 'FF15803D' : s.att >= 0.75 ? 'FFC2410C' : 'FFB91C1C', bold: true, size: 10, align: CTR, fmt: '0%' });
-      put(ws, r, 14, timeVal(s.avg), { fill: z, size: 9.5, align: CTR, fmt: 'hh:mm AM/PM' });
-      put(ws, r, 15, s.lateMin, { fill: s.lateMin ? 'FFFEE2E2' : z, color: s.lateMin ? 'FFB91C1C' : 'FF94A3B8', bold: !!s.lateMin, size: 9.5, align: CTR, fmt: '0" min"' });
-      ws.getRow(r).height = 20;
+    merge(ws, f2, dayEnd + 1, last, rows.length + ' employees · ' + working + ' working days', { fill: 'FFF2F2F2', color: C.mute, bold: false, size: 9, height: 18 });
+
+    const lg = f2 + 2;
+    merge(ws, lg, 1, last, 'LEGEND', { fill: C.head, size: 9.5, height: 18, align: LEFT });
+    const items = [
+      ['9:05', null, C.green, 'On time (within 5 min of shift start)'],
+      ['9:14', C.late, C.white, 'Late (more than 5 min)'],
+      ['12:20', C.half, C.white, 'Half-Day (more than 3 hours late)'],
+      ['Leave', C.late, C.white, 'Sick / Casual Leave'],
+      ['P', C.pOnly, C.white, 'Present, no check-in time recorded'],
+      ['WFH', C.wfh, C.wfhInk, 'Work From Home'],
+      ['A', C.absent, C.white, 'Absent'],
+      ['', C.off, C.ink, 'Weekend / Company holiday'],
+      ['', null, C.ink, 'Working day, not marked']
+    ];
+    items.forEach((it, i) => {
+      const r = lg + 1 + i;
+      put(ws, r, 1, it[0], { fill: it[1], color: it[2], bold: true, size: 9 });
+      ws.mergeCells(r, 2, r, Math.min(last, 8));
+      const c = ws.getCell(r, 2);
+      c.value = it[3]; c.font = { name: 'Calibri', size: 9, color: { argb: 'FF404040' } }; c.alignment = LEFT;
+      ws.getRow(r).height = 16;
     });
-    const end = 9 + rows.length;
-    ws.autoFilter = { from: { row: 9, column: 1 }, to: { row: end, column: last } };
-    ws.addConditionalFormatting({ ref: 'M10:M' + end, rules: [{ type: 'dataBar', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: 'FF6366F1' }, gradient: true }] });
+    merge(ws, lg + items.length + 2, 1, last, 'Employee360 · ' + shift.name + ' · ' + monthLabel + ' · generated ' + new Date().toLocaleString() + ' · payable: Present / Late / WFH / Leave = 1, Half-Day = 0.5, Absent / not marked = 0', { fill: 'FFF2F2F2', color: C.mute, bold: false, size: 8.5, height: 16, align: LEFT });
     return ws;
   }
 
   function logSheet(wb, cfg) {
-    const cols = ['Date', 'Day', 'ID', 'Employee', 'Shift', 'Shift Start', 'Status', 'Check-in', 'Late By', 'Check-out', 'Hours', 'Payable'];
+    const cols = ['Date', 'Day', '#', 'Employee', 'Shift Start', 'Status', 'Check-in', 'Late By', 'Check-out', 'Hours', 'Payable'];
     const ws = wb.addWorksheet('Daily Log', {
-      views: [{ state: 'frozen', ySplit: 4, xSplit: 4, topLeftCell: 'E5' }],
-      pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:4' },
-      properties: { defaultRowHeight: 18 }
+      views: [{ state: 'frozen', ySplit: 2, xSplit: 4, topLeftCell: 'E3' }],
+      pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:2' },
+      properties: { defaultRowHeight: 17 }
     });
-    [12, 7, 7, 25, 20, 12, 15, 13, 12, 13, 10, 10].forEach((w, i) => ws.getColumn(i + 1).width = w);
-    band(ws, 1, 1, cols.length, 'EMPLOYEE360  ·  DAILY ATTENDANCE LOG', { fill: 'FF4F46E5', size: 14, height: 30 });
-    band(ws, 2, 1, cols.length, cfg.monthLabel + '   ·   ' + cfg.shift.name + '   ·   every employee, every day, with real check-in times', { fill: 'FF3730A3', size: 10.5, height: 20 });
-    ws.getRow(3).height = 6;
-    cols.forEach((t, i) => put(ws, 4, i + 1, t, { fill: 'FF1E293B', color: 'FFFFFFFF', bold: true, size: 9.5, align: CTR }));
-    ws.getRow(4).height = 26;
-    let r = 5;
-    cfg.rows.forEach(s => {
+    [12, 7, 5, 26, 12, 15, 12, 12, 12, 10, 10].forEach((w, i) => ws.getColumn(i + 1).width = w);
+    merge(ws, 1, 1, cols.length, cfg.monthLabel + '  ·  ' + cfg.shift.name + '  ·  Daily Attendance Log', { fill: C.sumHead, size: 12, height: 22 });
+    cols.forEach((t, i) => put(ws, 2, i + 1, t, { fill: C.head, bold: true, size: 9.5 }));
+    ws.getRow(2).height = 22;
+    let r = 3;
+    cfg.rows.forEach((s, idx) => {
       cfg.meta.forEach(x => {
         const rec = cfg.data[x.ds] && cfg.data[x.ds][String(s.emp.id)];
-        const k = keyOf(rec, x.off), p = PAL[k], sh = startOn(s.emp, x.ds);
+        const p = plan(s.emp, x, rec), sh = startOn(s.emp, x.ds);
         const d = rec && rec.in != null ? rec.in - sh : null;
         const hrs = rec && rec.in != null && rec.out != null ? Math.max(0, (rec.out - rec.in) / 60) : null;
-        const z = x.off ? 'FFF7F5FF' : (r % 2 ? 'FFF8FAFC' : 'FFFFFFFF');
-        put(ws, r, 1, x.ds, { fill: z, size: 9.5, align: CTR });
-        put(ws, r, 2, x.dow, { fill: z, color: x.off ? 'FF6D28D9' : 'FF64748B', bold: x.off, size: 9.5, align: CTR });
-        put(ws, r, 3, s.emp.id, { fill: z, color: 'FF64748B', size: 9.5, align: CTR });
-        put(ws, r, 4, s.emp.name, { fill: z, bold: true, size: 9.5, align: { horizontal: 'left', vertical: 'middle', indent: 1 } });
-        put(ws, r, 5, cfg.shift.name, { fill: z, color: 'FF64748B', size: 9, align: CTR });
-        put(ws, r, 6, timeVal(sh), { fill: cfg.shift.tint, color: cfg.shift.accent, bold: true, size: 9, align: CTR, fmt: 'hh:mm AM/PM' });
-        put(ws, r, 7, x.off ? (x.name || 'Holiday') : p.label, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR });
-        put(ws, r, 8, rec && !x.off ? timeVal(rec.in) : null, { fill: p.fill, color: p.font, bold: true, size: 9.5, align: CTR, fmt: 'hh:mm AM/PM' });
-        put(ws, r, 9, x.off ? null : d, { fill: d != null && d > 5 ? 'FFFEE2E2' : z, color: d != null && d > 5 ? 'FFB91C1C' : 'FF15803D', bold: d != null && d > 5, size: 9.5, align: CTR, fmt: '+0" min";-0" min";"on time"' });
-        put(ws, r, 10, rec && !x.off ? timeVal(rec.out) : null, { fill: z, size: 9.5, align: CTR, fmt: 'hh:mm AM/PM' });
-        put(ws, r, 11, hrs, { fill: z, color: 'FF334155', size: 9.5, align: CTR, fmt: '0.00" h"' });
-        put(ws, r, 12, x.working ? p.pay : 0, { fill: x.working ? 'FFEEF2FF' : z, color: 'FF3730A3', bold: x.working, size: 9.5, align: CTR, fmt: '0.##' });
+        const z = x.off ? 'FFFFF2CC' : (r % 2 ? C.zebra : null);
+        put(ws, r, 1, x.ds, { fill: z, size: 9.5 });
+        put(ws, r, 2, x.dow, { fill: z, size: 9.5, color: x.off ? 'FF833C00' : C.mute, bold: x.off });
+        put(ws, r, 3, idx + 1, { fill: z, size: 9, color: C.mute });
+        put(ws, r, 4, s.emp.name, { fill: z, size: 9.5, align: LEFT });
+        put(ws, r, 5, tv(sh), { fill: z, size: 9.5, fmt: 'h:mm AM/PM' });
+        put(ws, r, 6, x.off ? (x.name || 'Holiday') : (p.text === 'Leave' ? (rec.status || 'Leave') : p.time != null ? (d > 180 ? 'Half-Day' : d > 5 ? 'Late' : 'Present') : (p.text || 'Not marked')), { fill: p.fill || z, color: p.color || C.ink, bold: true, size: 9.5 });
+        put(ws, r, 7, x.off ? null : tv(rec && rec.in), { fill: p.fill || z, color: p.color || C.ink, bold: true, size: 9.5, fmt: 'h:mm AM/PM' });
+        put(ws, r, 8, x.off ? null : d, { fill: d != null && d > 5 ? 'FFFFC7CE' : z, color: d != null && d > 5 ? 'FF9C0006' : 'FF375623', bold: d != null && d > 5, size: 9.5, fmt: '+0"m";-0"m";"on time"' });
+        put(ws, r, 9, x.off ? null : tv(rec && rec.out), { fill: z, size: 9.5, fmt: 'h:mm AM/PM' });
+        put(ws, r, 10, hrs, { fill: z, size: 9.5, fmt: '0.00"h"' });
+        put(ws, r, 11, x.working ? (p.text === 'Leave' ? 1 : p.fill === C.absent ? 0 : p.fill === C.half ? 0.5 : (p.time != null || p.fill === C.pOnly || p.fill === C.wfh || p.fill === C.late) ? 1 : 0) : 0, { fill: 'FFDDEBF7', color: 'FF1F4E79', bold: true, size: 9.5, fmt: '0.##' });
         r++;
       });
     });
-    ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: r - 1, column: cols.length } };
+    ws.autoFilter = { from: { row: 2, column: 1 }, to: { row: r - 1, column: cols.length } };
     return ws;
   }
 
-  async function buildBook(key, month, ctx, opts) {
+  async function build(key, month, ctx, opts) {
     const ExcelJS = await loadLib();
     const shift = SH[key];
     const list = ctx.people.filter(e => kindOf(e) === key);
-    const rows = stats(list, ctx.meta, ctx.data, month);
+    const rows = tally(list, ctx.meta, ctx.data, month);
     const [y, m] = month.split('-').map(Number);
-    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const starts = [...new Set(list.map(e => f12(startOn(e, month + '-01'))))];
-    const startLabel = key === 'exceptions'
-      ? (starts.length ? 'Custom starts: ' + starts.join(', ') : 'Custom shift starts')
-      : 'Shift start ' + (starts[0] || f12(key === 'afternoon' ? (month.slice(5, 7) === '10' ? 720 : 780) : 540)) + (key === 'afternoon' && month.slice(5, 7) === '10' ? ' (October schedule)' : '');
-    const cfg = { month, monthLabel, shift, rows, meta: ctx.meta, data: ctx.data, working: ctx.working, startLabel };
+    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).replace(' ', '-');
+    const cfg = { month, monthLabel, shift, rows, meta: ctx.meta, data: ctx.data, working: ctx.working };
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Employee360'; wb.created = new Date();
-    wb.title = 'Attendance ' + monthLabel + ' — ' + shift.name;
-    if (opts.overview) overviewSheet(wb, cfg);
-    matrixSheet(wb, Object.assign({ title: 'Attendance', mode: 'status' }, cfg));
-    if (opts.times) matrixSheet(wb, Object.assign({ title: 'Check-in Times', mode: 'time' }, cfg));
+    wb.title = 'Daily Attendance ' + monthLabel + ' — ' + shift.name;
+    gridSheet(wb, cfg);
     if (opts.log) logSheet(wb, cfg);
     const buf = await wb.xlsx.writeBuffer();
-    save(buf, 'Attendance_' + monthLabel.replace(' ', '-') + '_' + shift.file + '.xlsx');
+    save(buf, 'Daily_Attendance_' + monthLabel + '_' + shift.file + '.xlsx');
     return list.length;
+  }
+
+  function plain(key, month, ctx) {
+    const shift = SH[key], list = ctx.people.filter(e => kindOf(e) === key);
+    const [y, m] = month.split('-').map(Number);
+    const label = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).replace(' ', '-');
+    const aoa = [['Daily Attendance', '', label], ['#', 'Name of the Employee'].concat(ctx.meta.map(x => x.d))];
+    list.forEach((emp, i) => {
+      const row = [i + 1, emp.name];
+      ctx.meta.forEach(x => {
+        const rec = ctx.data[x.ds] && ctx.data[x.ds][String(emp.id)];
+        const p = plan(emp, x, rec);
+        row.push(p.time != null ? hhmm(p.time) : (p.text || ''));
+      });
+      aoa.push(row);
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Daily Attendance');
+    XLSX.writeFile(wb, 'Daily_Attendance_' + label + '_' + shift.file + '.xlsx');
   }
 
   function save(buf, name) {
@@ -8595,27 +8575,41 @@ async function saveAttRecord() {
     setTimeout(() => URL.revokeObjectURL(url), 6000);
   }
 
-  function plainBook(key, month, ctx) {
-    const shift = SH[key], list = ctx.people.filter(e => kindOf(e) === key);
-    const rows = stats(list, ctx.meta, ctx.data, month);
-    const head = ['ID', 'Employee', 'Shift Start'].concat(ctx.meta.map(x => x.d + ' ' + x.dow)).concat(['Payable', 'Att %']);
-    const aoa = [['Employee360 — ' + month + ' — ' + shift.name], [], head];
-    rows.forEach(s => aoa.push([s.emp.id, s.emp.name, f12(startOn(s.emp, month + '-01'))]
-      .concat(ctx.meta.map(x => PAL[keyOf(ctx.data[x.ds] && ctx.data[x.ds][String(s.emp.id)], x.off)].code))
-      .concat([s.pay, Math.round(s.att * 100) + '%'])));
-    const times = [['Check-in times — ' + shift.name], [], ['ID', 'Employee'].concat(ctx.meta.map(x => x.ds))];
-    rows.forEach(s => times.push([s.emp.id, s.emp.name].concat(ctx.meta.map(x => {
-      const rec = ctx.data[x.ds] && ctx.data[x.ds][String(s.emp.id)];
-      return x.off ? 'H' : (rec && rec.in != null ? hhmm(rec.in) : '');
-    }))));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Attendance');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(times), 'Check-in Times');
-    XLSX.writeFile(wb, 'Attendance_' + month + '_' + shift.file + '.xlsx');
+  /* ---------- panel ---------- */
+  const say = t => { if (typeof showStandardToast === 'function') showStandardToast(t); };
+  function close() { const m = document.getElementById('mx-modal'); if (m) { m.classList.add('hidden'); m.classList.remove('flex'); } }
+  function prog(pct, text, bad) {
+    const box = document.getElementById('mx-prog'); if (!box) return;
+    box.classList.remove('hidden');
+    const t = document.getElementById('mx-ptext');
+    t.textContent = text; t.className = bad ? 'text-rose-600' : 'text-indigo-600';
+    document.getElementById('mx-ppct').textContent = Math.round(pct) + '%';
+    document.getElementById('mx-pbar').style.width = Math.max(4, pct) + '%';
   }
 
-  /* ---------- Export panel ---------- */
-  function panel() {
+  function preview() {
+    const cell = (v, bg, fg, b) => '<td style="background:' + (bg || '#fff') + ';color:' + (fg || '#000') + ';font-weight:' + (b ? 700 : 400) + ';border:1px solid #000;padding:2px 4px;text-align:center;font-size:10px">' + (v || '&nbsp;') + '</td>';
+    const days = [1, 2, 3, 4, 5, 6, 7, 8];
+    return '<div class="overflow-x-auto rounded-xl border border-slate-300"><table style="border-collapse:collapse;width:100%;font-family:Calibri,sans-serif">' +
+      '<tr><td colspan="2" style="border:1px solid #000;padding:3px 6px;font-weight:700;font-size:11px">Daily Attendance</td>' +
+      '<td colspan="8" style="border:1px solid #000;padding:3px;text-align:center;font-weight:700;font-size:11px">October-2026</td></tr>' +
+      '<tr><td style="background:#d9d9d9;border:1px solid #000;padding:2px 4px;font-weight:700;font-size:10px">#</td>' +
+      '<td style="background:#d9d9d9;border:1px solid #000;padding:2px 6px;font-weight:700;font-size:10px;white-space:nowrap">Name of the Employee</td>' +
+      days.map(d => '<td style="background:' + (d === 3 || d === 4 ? '#ffc000' : '#d9d9d9') + ';border:1px solid #000;padding:2px;text-align:center;font-weight:700;font-size:10px">' + d + '</td>').join('') + '</tr>' +
+      '<tr><td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:10px;color:#808080">1</td>' +
+      '<td style="border:1px solid #000;padding:2px 6px;font-size:10px;white-space:nowrap">Ayaz Ahmed</td>' +
+      cell('9:02', null, '#008000') + cell('9:14', '#ff0000', '#fff', true) + cell('', '#ffc000') + cell('', '#ffc000') +
+      cell('8:55', null, '#008000') + cell('Leave', '#ff0000', '#fff', true) + cell('P', '#00b0f0', '#fff', true) + cell('12:20', '#ed7d31', '#fff', true) + '</tr>' +
+      '<tr><td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:10px;color:#808080">2</td>' +
+      '<td style="border:1px solid #000;padding:2px 6px;font-size:10px;white-space:nowrap">Abdul Azeem</td>' +
+      cell('8:47', null, '#008000') + cell('8:58', null, '#008000') + cell('', '#ffc000') + cell('', '#ffc000') +
+      cell('9:21', '#ff0000', '#fff', true) + cell('8:50', null, '#008000') + cell('') + cell('8:52', null, '#008000') + '</tr>' +
+      '</table></div>';
+  }
+
+  async function open() {
+    const month = monthKey();
+    if (!month) { say('Pick a month first.'); return; }
     let m = document.getElementById('mx-modal');
     if (!m) {
       m = document.createElement('div');
@@ -8626,73 +8620,43 @@ async function saveAttRecord() {
       m.onclick = e => { if (e.target === m) close(); };
       document.body.appendChild(m);
     }
-    return m;
-  }
-  function close() { const m = document.getElementById('mx-modal'); if (m) { m.classList.add('hidden'); m.classList.remove('flex'); } }
-  const say = t => { if (typeof showStandardToast === 'function') showStandardToast(t); };
-
-  function chips() {
-    return LEGEND.map(k => {
-      const p = PAL[k], hex = '#' + p.fill.slice(2), fg = '#' + p.font.slice(2);
-      return '<span class="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-200" style="background:' + hex + ';color:' + fg + '"><b>' + p.code + '</b><span class="font-semibold opacity-80">' + p.label + '</span></span>';
-    }).join('');
-  }
-
-  async function open() {
-    const month = monthKey();
-    if (!month) { say('Pick a month first.'); return; }
-    const m = panel();
     const [y, mo] = month.split('-').map(Number);
-    const monthLabel = new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    let list = [];
-    try { list = await people(); } catch (e) {}
+    const label = new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    let list = []; try { list = await people(); } catch (e) {}
     const n = { morning: 0, afternoon: 0, exceptions: 0 };
     list.forEach(e => n[kindOf(e)]++);
     const oct = month.slice(5, 7) === '10';
     const cards = ['morning', 'afternoon', 'exceptions'].map(k => {
-      const s = SH[k], count = n[k];
+      const s = SH[k], c = n[k];
       const sub = k === 'exceptions' ? 'Each person keeps their own start time'
-        : k === 'afternoon' ? ('Shift start ' + (oct ? '12:00 PM · October schedule' : '01:00 PM'))
-        : 'Shift start 09:00 AM';
-      const icon = k === 'morning' ? '🌅' : k === 'afternoon' ? '🌇' : '⚙️';
+        : k === 'afternoon' ? ('Shift start ' + (oct ? '12:00 PM · October rule' : '1:00 PM'))
+        : 'Shift start 9:00 AM';
       return '<div class="rounded-2xl border border-slate-200 p-4 flex flex-col gap-3 bg-white hover:shadow-md transition-shadow">' +
-        '<div class="flex items-start justify-between gap-2">' +
-          '<div><div class="text-sm font-bold text-slate-800">' + icon + ' ' + s.name + '</div>' +
-          '<div class="text-[11px] text-slate-500 font-medium mt-0.5">' + sub + '</div></div>' +
-          '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:#' + s.tint.slice(2) + ';color:#' + s.accent.slice(2) + '">' + count + '</span>' +
-        '</div>' +
-        '<div class="text-[10px] text-slate-400 font-semibold leading-relaxed">Overview · Attendance matrix · Check-in times · Daily log</div>' +
-        '<button data-one="' + k + '" ' + (count ? '' : 'disabled') + ' class="mt-auto w-full text-xs font-bold px-3 py-2.5 rounded-xl transition-colors ' + (count ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">' + (count ? '⬇ Download .xlsx' : 'No employees') + '</button>' +
-      '</div>';
+        '<div class="flex items-start justify-between gap-2"><div>' +
+        '<div class="text-sm font-bold text-slate-800">' + s.icon + ' ' + s.name + '</div>' +
+        '<div class="text-[11px] text-slate-500 font-medium mt-0.5">' + sub + '</div></div>' +
+        '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">' + c + '</span></div>' +
+        '<div class="text-[10px] text-slate-400 font-semibold">Daily Attendance grid' + ' · optional Daily Log</div>' +
+        '<button data-one="' + k + '" ' + (c ? '' : 'disabled') + ' class="mt-auto w-full text-xs font-bold px-3 py-2.5 rounded-xl transition-colors ' + (c ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">' + (c ? '⬇ Download .xlsx' : 'No employees') + '</button></div>';
     }).join('');
 
     m.innerHTML =
 '<div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">' +
   '<div class="px-6 py-4 text-white flex items-center justify-between gap-4" style="background:linear-gradient(100deg,#4f46e5,#7c3aed 55%,#0ea5e9)">' +
-    '<div><h3 class="text-base font-bold tracking-tight">Export Monthly Attendance</h3>' +
-    '<p class="text-[11px] font-medium text-indigo-100 mt-0.5">' + monthLabel + ' · one separate Excel file per shift · coloured statuses, sized columns, real check-in times</p></div>' +
-    '<button data-close class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 font-bold transition-colors">&times;</button>' +
-  '</div>' +
+    '<div><h3 class="text-base font-bold tracking-tight">Export Daily Attendance</h3>' +
+    '<p class="text-[11px] font-medium text-indigo-100 mt-0.5">' + label + ' · one file per shift · date-wise grid with check-in times</p></div>' +
+    '<button data-close class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 font-bold transition-colors">&times;</button></div>' +
   '<div class="mx-scroll overflow-y-auto px-6 py-5 space-y-5">' +
+    '<div><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Your format — exactly this</div>' + preview() + '</div>' +
     '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' + cards + '</div>' +
-    '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">' +
-      '<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Excel colour legend</div>' +
-      '<div class="flex flex-wrap gap-1.5">' + chips() + '</div>' +
-      '<div class="text-[11px] font-semibold text-rose-600">Late is red. Half-Day is orange. Absent is deep red. Holiday columns are purple.</div>' +
-    '</div>' +
-    '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' +
-      '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="checkbox" id="mx-overview" checked class="w-4 h-4 accent-indigo-600">Overview sheet</label>' +
-      '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="checkbox" id="mx-times" checked class="w-4 h-4 accent-indigo-600">Check-in times sheet</label>' +
-      '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="checkbox" id="mx-log" checked class="w-4 h-4 accent-indigo-600">Daily log sheet</label>' +
-    '</div>' +
+    '<label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50 w-full sm:w-auto"><input type="checkbox" id="mx-log" checked class="w-4 h-4 accent-indigo-600">Also add a Daily Log sheet (date, shift start, check-in, late by, check-out, hours)</label>' +
     '<div id="mx-prog" class="hidden"><div class="flex items-center justify-between text-[11px] font-bold mb-1"><span id="mx-ptext" class="text-indigo-600">Working…</span><span id="mx-ppct" class="text-slate-400 tabular-nums"></span></div>' +
     '<div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><i id="mx-pbar" class="block h-full rounded-full transition-all duration-300" style="width:0%;background:linear-gradient(90deg,#8b5cf6,#4f46e5,#10b981)"></i></div></div>' +
-    '<div class="text-[11px] text-slate-400 font-medium leading-relaxed">Downloading all three files at once may prompt your browser to allow multiple downloads — choose <b>Allow</b>. Times are written as real Excel time values, so they sort and total correctly.</div>' +
+    '<div class="text-[11px] text-slate-400 font-medium leading-relaxed">Green time = on time (5 min grace) · red = late · orange = half-day (3 h+) · red <b>Leave</b> · cyan <b>P</b> = present without time · yellow = weekend/holiday · blank = not marked. Times are real Excel time values, so they sort and total. Downloading all three may prompt your browser — choose <b>Allow</b>.</div>' +
   '</div>' +
   '<div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">' +
     '<button data-close class="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-2">Cancel</button>' +
-    '<button data-all class="text-xs font-bold px-5 py-3 rounded-xl text-white shadow-sm transition-colors" style="background:linear-gradient(100deg,#4f46e5,#7c3aed)">⬇ Download all 3 shift files</button>' +
-  '</div>' +
+    '<button data-all class="text-xs font-bold px-5 py-3 rounded-xl text-white shadow-sm" style="background:linear-gradient(100deg,#4f46e5,#7c3aed)">⬇ Download all 3 shift files</button></div>' +
 '</div>';
     m.classList.remove('hidden'); m.classList.add('flex');
     m.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
@@ -8700,24 +8664,11 @@ async function saveAttRecord() {
     m.querySelector('[data-all]').onclick = () => run(['morning', 'afternoon', 'exceptions'].filter(k => n[k]));
   }
 
-  function prog(pct, text) {
-    const box = document.getElementById('mx-prog');
-    if (!box) return;
-    box.classList.remove('hidden');
-    document.getElementById('mx-ptext').textContent = text;
-    document.getElementById('mx-ppct').textContent = Math.round(pct) + '%';
-    document.getElementById('mx-pbar').style.width = Math.max(4, pct) + '%';
-  }
-
   async function run(keys) {
-    if (working || !keys.length) return;
-    working = true;
+    if (busy || !keys.length) return;
+    busy = true;
     const month = monthKey();
-    const opts = {
-      overview: (document.getElementById('mx-overview') || {}).checked !== false,
-      times: (document.getElementById('mx-times') || {}).checked !== false,
-      log: (document.getElementById('mx-log') || {}).checked !== false
-    };
+    const opts = { log: (document.getElementById('mx-log') || {}).checked !== false };
     const btns = document.querySelectorAll('#mx-modal button');
     btns.forEach(b => { b.disabled = true; b.classList.add('opacity-60'); });
     try {
@@ -8728,33 +8679,28 @@ async function saveAttRecord() {
       let styled = true;
       try { await loadLib(); } catch (e) { styled = false; }
       for (let i = 0; i < keys.length; i++) {
-        const k = keys[i];
-        prog(40 + (i / keys.length) * 55, 'Building ' + SH[k].name + ' workbook…');
-        if (styled) await buildBook(k, month, ctx, opts);
-        else plainBook(k, month, ctx);
-        prog(40 + ((i + 1) / keys.length) * 55, SH[k].name + ' downloaded');
+        prog(40 + (i / keys.length) * 55, 'Building ' + SH[keys[i]].name + ' grid…');
+        if (styled) await build(keys[i], month, ctx, opts); else plain(keys[i], month, ctx);
+        prog(40 + ((i + 1) / keys.length) * 55, SH[keys[i]].name + ' downloaded');
         if (i < keys.length - 1) await new Promise(r => setTimeout(r, 700));
       }
       prog(100, 'Done · ' + keys.length + ' file' + (keys.length > 1 ? 's' : '') + ' downloaded');
-      say(styled ? keys.length + ' styled Excel file' + (keys.length > 1 ? 's' : '') + ' exported.' : 'Exported without colours — styling library could not load.');
+      say(styled ? keys.length + ' Excel file' + (keys.length > 1 ? 's' : '') + ' exported in your format.' : 'Exported without colours — styling library could not load.');
       if (typeof window.renderMonthlyView === 'function') window.renderMonthlyView(false);
       setTimeout(close, 1100);
     } catch (e) {
-      prog(0, 'Export failed: ' + e.message);
-      const t = document.getElementById('mx-ptext'); if (t) t.className = 'text-rose-600';
+      prog(0, 'Export failed: ' + e.message, true);
       say('Export failed: ' + e.message);
     } finally {
-      working = false;
-      btns.forEach(b => { if (!b.hasAttribute('data-one') || b.textContent.indexOf('Download') > -1) { b.disabled = false; } b.classList.remove('opacity-60'); });
+      busy = false;
+      btns.forEach(b => { b.disabled = false; b.classList.remove('opacity-60'); });
     }
   }
 
   window.exportMonthlyExcel = open;
-
   const st = document.createElement('style');
   st.textContent = '.mx-scroll{scrollbar-width:thin;scrollbar-color:#a5b4fc #f1f5f9}' +
-    '.mx-scroll::-webkit-scrollbar{width:10px}' +
-    '.mx-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}' +
+    '.mx-scroll::-webkit-scrollbar{width:10px}.mx-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}' +
     '.mx-scroll::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#a78bfa,#818cf8);border-radius:99px;border:2px solid #f1f5f9;background-clip:content-box}' +
     '.mx-scroll::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#8b5cf6,#4f46e5);background-clip:content-box}' +
     '#mx-modal>div{animation:mxIn .26s cubic-bezier(.32,.72,.35,1) both}@keyframes mxIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}';
@@ -8762,6 +8708,10 @@ async function saveAttRecord() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); }, true);
 })();
 </script>
+
+
+
+
 </body>
 </html>
 
