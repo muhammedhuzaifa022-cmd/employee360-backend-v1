@@ -9454,7 +9454,353 @@ async function saveAttRecord() {
   setTimeout(() => { bind(); paintDaily(); paintMonthly(); paintYearly(); }, 1200);
 })();
 </script>
+<script>
+/* ===== YEARLY v3 — LOCKED. Attendance ≠ Payable. Leave & Absent score 0. ===== */
+(function () {
+  const API = 'https://employee360-backend-v1.onrender.com/api/v1';
+  const HDR = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('access_token') });
+  const UK = 'e360-workday-unlocks', BK = 'e360-yearly-basis';
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const ATT = { 'Present':1,'Late':1,'WFH':1,'Half-Day':0.5,'Casual Leave':0,'Sick Leave':0,'Absent':0 };
+  const PAY = { 'Present':1,'Late':1,'WFH':1,'Half-Day':0.5,'Casual Leave':1,'Sick Leave':1,'Absent':0 };
+  const SKIN = {
+    'Present':['P','bg-emerald-100 text-emerald-800'], 'Late':['L','bg-amber-100 text-amber-800'],
+    'WFH':['WFH','bg-indigo-100 text-indigo-700'], 'Half-Day':['HD','bg-orange-100 text-orange-800'],
+    'Casual Leave':['CL','bg-yellow-100 text-yellow-800'], 'Sick Leave':['SL','bg-orange-100 text-orange-800'],
+    'Absent':['A','bg-red-100 text-red-800']
+  };
+  let basis = 'marked', busy = false, prog = 0, err = null, cache = {}, stamp = {};
+  try { const b = localStorage.getItem(BK); if (b === 'working' || b === 'marked') basis = b; } catch (e) {}
 
+  const pad = n => String(n).padStart(2, '0');
+  const A = () => (typeof att !== 'undefined' && att) ? att : { users: [], records: {} };
+  const unlocks = () => { try { return JSON.parse(localStorage.getItem(UK)) || {}; } catch (e) { return {}; } };
+  const info = d => { try { return getDayType(d); } catch (e) { const w = new Date(d + 'T00:00:00').getDay(); return { isHoliday: w === 0 || w === 6, name: w === 0 ? 'Sunday' : 'Saturday' }; } };
+  const canon = s => {
+    if (s == null) return null;
+    const t = String(s).trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+    const M = { 'present':'Present','p':'Present','late':'Late','l':'Late','half day':'Half-Day','halfday':'Half-Day','hd':'Half-Day','wfh':'WFH','work from home':'WFH','casual leave':'Casual Leave','cl':'Casual Leave','sick leave':'Sick Leave','sl':'Sick Leave','absent':'Absent','a':'Absent','unmarked':'Unmarked' };
+    return M[t] || String(s).trim();
+  };
+  const toMin = v => { if (v == null) return null; const s = String(v).trim(); if (!s || s === '-') return null; const p = s.split(':'); const h = parseInt(p[0], 10), m = parseInt(p[1] || '0', 10); return (Number.isFinite(h) && Number.isFinite(m)) ? h * 60 + m : null; };
+  const f12 = m => m == null ? '—' : pad((Math.floor(m / 60) % 12) || 12) + ':' + pad(m % 60) + ' ' + (Math.floor(m / 60) < 12 ? 'AM' : 'PM');
+  const f1 = v => (v % 1 ? v.toFixed(1) : String(v));
+  const yearNow = () => { const s = document.getElementById('yearly-year-select'); return Number(s && s.value) || new Date().getFullYear(); };
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  async function people() {
+    let list = A().users || [];
+    if (list.length) return list;
+    try { if (typeof employees !== 'undefined' && employees.length) return employees; } catch (e) {}
+    const r = await fetch(API + '/users?page_size=100', { headers: HDR() });
+    if (!r.ok) throw new Error('Users API ' + r.status);
+    const d = await r.json();
+    list = (d.items || []).filter(u => u.is_active && u.role !== 'admin').map(u => ({ id: String(u.id), name: u.full_name }));
+    if (typeof att !== 'undefined') att.users = list;
+    return list;
+  }
+
+  function seed(year) {
+    const out = {};
+    const R = A().records || {};
+    Object.keys(R).forEach(ds => {
+      if (ds.slice(0, 4) !== String(year)) return;
+      out[ds] = out[ds] || {};
+      Object.keys(R[ds]).forEach(id => {
+        const r = R[ds][id];
+        const st = canon(typeof r === 'string' ? r : (r && r.status));
+        if (!st) return;
+        out[ds][String(id)] = { status: st, in: toMin(r && (r.check_in != null ? r.check_in : r.checkIn)), out: toMin(r && (r.check_out != null ? r.check_out : r.checkOut)) };
+      });
+    });
+    return out;
+  }
+
+  async function load(year, force) {
+    if (!force && cache[year] && Date.now() - stamp[year] < 45000) return cache[year];
+    busy = true; prog = 0; err = null; bar();
+    const data = seed(year);
+    let done = 0, ok = 0;
+    const queue = MON.map((_, m) => m);
+    const worker = async () => {
+      while (queue.length) {
+        const m = queue.shift();
+        const mk = year + '-' + pad(m + 1);
+        const dim = new Date(year, m + 1, 0).getDate();
+        try {
+          const r = await fetch(`${API}/attendance/team-attendance?start_date=${mk}-01&end_date=${mk}-${pad(dim)}`, { headers: HDR() });
+          if (r.ok) {
+            const rows = await r.json();
+            (Array.isArray(rows) ? rows : []).forEach(it => {
+              const ds = String(it.date).slice(0, 10), id = String(it.employee_id), st = canon(it.status);
+              if (!st) return;
+              data[ds] = data[ds] || {};
+              data[ds][id] = { status: st, in: toMin(it.check_in != null ? it.check_in : it.checkIn), out: toMin(it.check_out != null ? it.check_out : it.checkOut) };
+            });
+            ok++;
+          }
+        } catch (e) {}
+        done++; prog = Math.round(done / 12 * 100); bar();
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    busy = false; prog = 100;
+    if (!ok && !Object.keys(data).length) err = 'No attendance could be loaded for ' + year + '.';
+    cache[year] = data; stamp[year] = Date.now();
+    const R = A().records = A().records || {};
+    Object.keys(data).forEach(ds => { R[ds] = R[ds] || {}; Object.keys(data[ds]).forEach(id => { R[ds][id] = Object.assign({}, R[ds][id], { status: data[ds][id].status }); }); });
+    return data;
+  }
+
+  function months(year) {
+    const u = unlocks(), out = [];
+    for (let m = 0; m < 12; m++) {
+      const dim = new Date(year, m + 1, 0).getDate(), days = [];
+      for (let d = 1; d <= dim; d++) {
+        const ds = year + '-' + pad(m + 1) + '-' + pad(d), i = info(ds), off = !!i.isHoliday && !u[ds];
+        days.push({ ds, d, off, working: !off, name: i.name, dow: new Date(year, m, d).toLocaleDateString('en-US', { weekday: 'short' }) });
+      }
+      out.push({ m, days, working: days.filter(x => x.working).length });
+    }
+    return out;
+  }
+
+  function calc(emp, mo, data) {
+    const s = { marked: 0, att: 0, pay: 0, working: mo.working, P: 0, L: 0, HD: 0, W: 0, CL: 0, SL: 0, AB: 0, log: [] };
+    mo.days.forEach(x => {
+      if (!x.working) { s.log.push({ x, st: null, off: true }); return; }
+      const rec = data[x.ds] && data[x.ds][String(emp.id)];
+      const st = rec && canon(rec.status);
+      if (!st || ATT[st] === undefined) { s.log.push({ x, st: null, off: false }); return; }
+      s.marked++; s.att += ATT[st]; s.pay += PAY[st];
+      if (st === 'Present') s.P++; else if (st === 'Late') s.L++; else if (st === 'Half-Day') s.HD++;
+      else if (st === 'WFH') s.W++; else if (st === 'Casual Leave') s.CL++; else if (st === 'Sick Leave') s.SL++; else s.AB++;
+      s.log.push({ x, st, rec, off: false, a: ATT[st], p: PAY[st] });
+    });
+    s.den = s.marked === 0 ? 0 : (basis === 'marked' ? s.marked : mo.working);
+    s.pct = s.den > 0 ? s.att / s.den * 100 : null;
+    s.lost = s.CL + s.SL + s.AB;
+    return s;
+  }
+
+  const tone = p => p == null ? 'bg-slate-100 text-slate-400' : p >= 95 ? 'bg-emerald-100 text-emerald-800' : p >= 85 ? 'bg-lime-100 text-lime-800' : p >= 75 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-700';
+
+  function ensure() {
+    const sec = document.getElementById('view-yearly'); if (!sec) return false;
+    const tb = sec.querySelector('table'); if (!tb) return false;
+    const card = tb.closest('.bg-white'); if (card) card.classList.add('y3-accent');
+    const sc = tb.closest('.overflow-x-auto'); if (sc) sc.classList.add('y3-scroll');
+    const tab = document.getElementById('tab-yearly'); if (tab) tab.textContent = 'Yearly ✓';
+    const old = document.getElementById('y-toolbar'); if (old) old.remove();
+    const s = document.getElementById('yearly-search');
+    if (s) { const c = s.cloneNode(true); c.id = 'y3-search'; c.setAttribute('oninput', ''); c.oninput = () => draw(); s.parentNode.replaceChild(c, s); }
+    if (!document.getElementById('y3-bar') && card && card.parentNode) {
+      const b = document.createElement('div');
+      b.id = 'y3-bar';
+      b.className = 'bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden';
+      b.innerHTML =
+        '<div class="px-4 py-2.5 text-white flex items-center gap-2 flex-wrap" style="background:linear-gradient(100deg,#7f1d1d,#b91c1c 45%,#4f46e5)">' +
+          '<span class="text-[10px] font-extrabold uppercase tracking-widest bg-white/20 px-2 py-0.5 rounded">v3 locked</span>' +
+          '<span class="text-[11px] font-bold">Attendance % ≠ Payable — Sick Leave, Casual Leave and Absent score <b>0 attendance</b> but still pay <b>1 day</b>.</span>' +
+        '</div>' +
+        '<div class="px-4 py-3 flex flex-col lg:flex-row items-stretch lg:items-center gap-3">' +
+          '<div class="flex items-center gap-2 shrink-0"><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Divide by</span>' +
+          '<div class="flex bg-slate-100 p-1 rounded-xl"><button id="y3-m" class="px-3 py-1.5 text-[11px] font-bold rounded-lg">Marked days</button><button id="y3-w" class="px-3 py-1.5 text-[11px] font-bold rounded-lg">All working days</button></div></div>' +
+          '<div class="flex-1 min-w-[200px]"><div class="flex items-center justify-between text-[11px] font-bold mb-1 gap-2"><span id="y3-cover" class="text-slate-500">Loading…</span><span id="y3-pct" class="text-indigo-600 tabular-nums shrink-0"></span></div>' +
+          '<div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><i id="y3-prog" class="block h-full rounded-full transition-all duration-500" style="width:0%;background:linear-gradient(90deg,#b91c1c,#4f46e5,#10b981)"></i></div></div>' +
+          '<button id="y3-refresh" class="shrink-0 bg-slate-900 hover:bg-black text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors">↻ Recompute</button>' +
+        '</div>' +
+        '<div id="y3-note" class="px-4 pb-3 text-[11px] font-semibold text-slate-500 leading-relaxed"></div>';
+      card.parentNode.insertBefore(b, card);
+      document.getElementById('y3-m').onclick = () => { basis = 'marked'; try { localStorage.setItem(BK, basis); } catch (e) {} draw(); };
+      document.getElementById('y3-w').onclick = () => { basis = 'working'; try { localStorage.setItem(BK, basis); } catch (e) {} draw(); };
+      document.getElementById('y3-refresh').onclick = async () => { const y = yearNow(); await load(y, true); draw(); };
+    }
+    return true;
+  }
+
+  function bar(t) {
+    const cov = document.getElementById('y3-cover'), pc = document.getElementById('y3-pct'), pr = document.getElementById('y3-prog'), btn = document.getElementById('y3-refresh');
+    const on = 'px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white shadow-sm text-slate-800';
+    const off = 'px-3 py-1.5 text-[11px] font-bold rounded-lg text-slate-500 hover:text-slate-800';
+    const bm = document.getElementById('y3-m'), bw = document.getElementById('y3-w');
+    if (bm) bm.className = basis === 'marked' ? on : off;
+    if (bw) bw.className = basis === 'working' ? on : off;
+    if (!cov) return;
+    if (busy) { cov.textContent = 'Reading attendance…'; cov.className = 'text-indigo-600'; pc.textContent = prog + '%'; pr.style.width = Math.max(5, prog) + '%'; if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); } return; }
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+    if (err) { cov.textContent = err; cov.className = 'text-rose-600'; pc.textContent = ''; pr.style.width = '0%'; return; }
+    if (!t) { cov.textContent = 'Ready'; pc.textContent = ''; pr.style.width = '100%'; return; }
+    cov.textContent = t.months + ' months with data · ' + t.marked + ' marked days · ' + t.leave + ' leave · ' + t.absent + ' absent · ' + t.unmarked + ' not marked';
+    cov.className = 'text-slate-500';
+    pc.textContent = (t.working ? Math.round(t.marked / t.working * 100) : 0) + '% coverage';
+    pr.style.width = (t.working ? Math.round(t.marked / t.working * 100) : 0) + '%';
+  }
+
+  let CTX = null;
+
+  async function draw() {
+    if (!ensure()) return;
+    const year = yearNow();
+    const head = document.querySelector('#view-yearly thead tr'), tbody = document.getElementById('yearly-table-body');
+    if (!head || !tbody) return;
+    let list;
+    try { list = await people(); } catch (e) { err = e.message; bar(); tbody.innerHTML = '<tr><td colspan="15" class="p-6 text-center text-rose-600 font-bold text-sm">' + esc(e.message) + '</td></tr>'; return; }
+    const sb = document.getElementById('y3-search');
+    const q = (sb ? sb.value : '').toLowerCase().trim();
+    const shown = list.filter(e => !q || String(e.name || '').toLowerCase().includes(q) || String(e.id).includes(q));
+    const MO = months(year), data = cache[year] || seed(year);
+    CTX = { year, MO, data, list };
+    const yearWorking = MO.reduce((a, m) => a + m.working, 0);
+
+    head.innerHTML = '<th class="py-3 px-4 sticky left-0 bg-slate-50 z-20 border-r border-slate-200 min-w-[215px] text-xs font-bold text-slate-500 uppercase tracking-wider">Employee</th>' +
+      MO.map(m => '<th class="py-2 px-2 text-center min-w-[74px] text-xs font-bold text-slate-500 uppercase tracking-wider"><div>' + MON[m.m] + '</div><div class="text-[9px] font-semibold normal-case text-slate-400">' + m.working + ' wd</div></th>').join('') +
+      '<th class="py-3 px-3 text-center bg-rose-50 text-xs font-bold text-rose-700 uppercase tracking-wider border-l border-slate-200">Attendance</th>' +
+      '<th class="py-3 px-3 text-center bg-indigo-50 text-xs font-bold text-indigo-700 uppercase tracking-wider border-l border-slate-200">Payable</th>';
+
+    let tP = 0, tL = 0, tH = 0, tC = 0, tS = 0, tA = 0, tPay = 0, tM = 0, tW = 0, act = new Set(), rows = '';
+    shown.forEach(emp => {
+      let sa = 0, sd = 0, sp = 0, sm = 0, sw = 0, sl = 0, cl = 0, ab = 0, cells = '';
+      MO.forEach(mo => {
+        const r = calc(emp, mo, data);
+        if (r.marked > 0) {
+          act.add(mo.m); sa += r.att; sd += r.den; sp += r.pay; sm += r.marked; sw += r.working;
+          sl += r.SL; cl += r.CL; ab += r.AB;
+          tP += r.P + r.W; tL += r.L; tH += r.HD; tC += r.CL; tS += r.SL; tA += r.AB; tPay += r.pay;
+        }
+        const partial = r.marked > 0 && r.marked < r.working;
+        cells += '<td data-emp="' + esc(emp.id) + '" data-m="' + mo.m + '" title="Click to see the day-by-day proof" class="py-2 px-2 text-center cursor-pointer hover:bg-indigo-50 transition-colors">' +
+          '<span class="inline-block min-w-[46px] px-1.5 py-0.5 rounded font-bold text-[11px] ' + tone(r.pct) + (partial ? ' ring-1 ring-amber-300' : '') + '">' + (r.pct == null ? '-' : Math.round(r.pct) + '%') + '</span>' +
+          '<div class="text-[9px] font-semibold mt-0.5 ' + (r.marked === 0 ? 'text-slate-300' : r.lost > 0 ? 'text-rose-500' : 'text-slate-400') + '">' + (r.marked === 0 ? '—' : f1(r.att) + '/' + r.den) + '</div></td>';
+      });
+      tM += sm; tW += sw;
+      const avg = sd > 0 ? sa / sd * 100 : null;
+      const badges = [sl ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-800">' + sl + ' SL</span>' : '',
+        cl ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">' + cl + ' CL</span>' : '',
+        ab ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-800">' + ab + ' A</span>' : ''].filter(Boolean).join('');
+      rows += '<tr class="hover:bg-slate-50 transition-colors"><td class="py-2.5 px-4 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap">' +
+        '<div class="text-xs font-bold text-slate-800">' + esc(emp.name) + '</div>' +
+        '<div class="flex items-center gap-1.5 mt-0.5"><span class="text-[10px] text-slate-400 font-normal">#' + esc(emp.id) + '</span>' + badges + '</div></td>' + cells +
+        '<td class="py-2.5 px-3 text-center bg-rose-50/40 border-l border-slate-200"><span class="inline-block min-w-[48px] px-2 py-0.5 rounded font-extrabold text-xs ' + tone(avg) + '">' + (avg == null ? '-' : Math.round(avg) + '%') + '</span><div class="text-[9px] font-semibold text-slate-400 mt-0.5">' + (sd ? f1(sa) + '/' + sd : '—') + '</div></td>' +
+        '<td class="py-2.5 px-3 text-center bg-indigo-50/40 border-l border-slate-200"><span class="text-xs font-extrabold text-indigo-700 tabular-nums">' + (sd ? f1(sp) : '-') + '</span><div class="text-[9px] font-semibold text-indigo-400 mt-0.5">' + (sm ? sm + ' marked' : '—') + '</div></td></tr>';
+    });
+    tbody.innerHTML = rows || '<tr><td colspan="15" class="p-6 text-center text-slate-500 text-sm">No employees match your search.</td></tr>';
+    tbody.querySelectorAll('[data-emp]').forEach(td => td.onclick = () => inspect(td.dataset.emp, Number(td.dataset.m)));
+
+    set('y-working', yearWorking); set('y-present', tP); set('y-late', tL); set('y-half', tH);
+    set('y-casual', tC); set('y-sick', tS); set('y-payable', f1(tPay)); set('y-absent', tA);
+    bar({ months: act.size, marked: tM, working: tW, unmarked: Math.max(0, tW - tM), leave: tC + tS, absent: tA });
+
+    const note = document.getElementById('y3-note');
+    if (note) {
+      const names = [...act].sort((a, b) => a - b).map(m => MON[m]).join(', ') || 'none';
+      note.innerHTML = '<b class="text-slate-700">' + year + '</b> counts <b class="text-indigo-700">' + names + '</b> only. ' +
+        '<b class="text-emerald-700">Present / Late / WFH = 1</b> · <b class="text-orange-700">Half-Day = 0.5</b> · <b class="text-rose-700">Sick Leave, Casual Leave, Absent = 0 attendance</b> (still 1 payable for leave). ' +
+        (basis === 'marked' ? 'Dividing by days actually marked.' : 'Dividing by every working day of those months.') +
+        ' <b class="text-slate-700">Click any percentage</b> to see every day and why it scored what it did.';
+    }
+  }
+
+  function inspect(empId, mi) {
+    if (!CTX) return;
+    const emp = CTX.list.find(e => String(e.id) === String(empId)); if (!emp) return;
+    const mo = CTX.MO[mi], r = calc(emp, mo, CTX.data);
+    let m = document.getElementById('y3-modal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'y3-modal';
+      m.className = 'fixed inset-0 z-[80] hidden items-center justify-center p-4';
+      m.style.background = 'rgba(15,23,42,.6)'; m.style.backdropFilter = 'blur(6px)';
+      m.onclick = e => { if (e.target === m) { m.classList.add('hidden'); m.classList.remove('flex'); } };
+      document.body.appendChild(m);
+    }
+    const rows = r.log.map(l => {
+      if (l.off) return '<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg bg-purple-50/60 text-[11px]"><span class="w-20 font-bold text-purple-700 tabular-nums">' + l.x.ds.slice(5) + '</span><span class="flex-1 font-semibold text-purple-700">' + esc(l.x.name || l.x.dow) + '</span><span class="text-purple-500 font-bold">not a working day</span></div>';
+      if (!l.st) return '<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg text-[11px]"><span class="w-20 font-bold text-slate-400 tabular-nums">' + l.x.ds.slice(5) + '</span><span class="flex-1 text-slate-400 font-semibold">' + l.x.dow + '</span><span class="text-slate-400 font-bold">not marked · excluded</span></div>';
+      const sk = SKIN[l.st] || ['?', 'bg-slate-100 text-slate-600'];
+      return '<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 text-[11px]">' +
+        '<span class="w-20 font-bold text-slate-700 tabular-nums">' + l.x.ds.slice(5) + ' <span class="text-slate-400 font-normal">' + l.x.dow + '</span></span>' +
+        '<span class="px-1.5 py-0.5 rounded font-bold ' + sk[1] + '">' + sk[0] + '</span>' +
+        '<span class="flex-1 text-slate-500 font-semibold">' + (l.rec && l.rec.in != null ? 'in ' + f12(l.rec.in) : 'no time') + '</span>' +
+        '<span class="font-extrabold ' + (l.a > 0 ? 'text-emerald-700' : 'text-rose-600') + '">att ' + f1(l.a) + '</span>' +
+        '<span class="font-bold text-indigo-600 w-14 text-right">pay ' + f1(l.p) + '</span></div>';
+    }).join('');
+    m.innerHTML =
+'<div class="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">' +
+  '<div class="px-5 py-4 text-white" style="background:linear-gradient(100deg,#7f1d1d,#b91c1c 45%,#4f46e5)">' +
+    '<div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-bold">' + esc(emp.name) + ' · ' + MON[mi] + ' ' + CTX.year + '</h3>' +
+    '<p class="text-[11px] font-medium text-red-100 mt-0.5">#' + esc(emp.id) + ' · every marked day, exactly as counted</p></div>' +
+    '<button data-x class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 font-bold">&times;</button></div>' +
+    '<div class="mt-3 grid grid-cols-4 gap-2 text-center">' +
+      [['Attendance', r.pct == null ? '—' : Math.round(r.pct) + '%'], ['Credit', f1(r.att)], ['Divided by', r.den], ['Payable', f1(r.pay)]].map(([k, v]) =>
+        '<div class="bg-white/15 rounded-lg py-1.5"><div class="text-[9px] font-bold uppercase tracking-wide text-white/70">' + k + '</div><div class="text-sm font-extrabold">' + v + '</div></div>').join('') +
+    '</div></div>' +
+  '<div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600">' +
+    'Present ' + r.P + ' · Late ' + r.L + ' · WFH ' + r.W + ' · Half-Day ' + r.HD +
+    ' · <span class="text-orange-700">Sick ' + r.SL + '</span> · <span class="text-yellow-700">Casual ' + r.CL + '</span> · <span class="text-rose-700">Absent ' + r.AB + '</span>' +
+    ' · marked ' + r.marked + '/' + r.working + '</div>' +
+  '<div class="y3-scroll flex-1 overflow-y-auto px-3 py-2 space-y-0.5">' + rows + '</div>' +
+  '<div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">' +
+    '<span class="text-[11px] font-semibold text-slate-500">' + (r.lost ? r.lost + ' day(s) scored 0 attendance.' : 'No leave or absence recorded here.') + '</span>' +
+    '<button data-x class="text-xs font-bold px-4 py-2 rounded-xl text-white bg-slate-900 hover:bg-black">Close</button></div></div>';
+    m.classList.remove('hidden'); m.classList.add('flex');
+    m.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { m.classList.add('hidden'); m.classList.remove('flex'); });
+  }
+
+  async function render(sync) {
+    if (!ensure()) return;
+    const y = yearNow();
+    draw();
+    if (sync === false) { bar(); return; }
+    await load(y, false);
+    if (yearNow() === y) draw();
+  }
+
+  try {
+    Object.defineProperty(window, 'renderYearlyView', { configurable: true, get: () => render, set: () => {} });
+  } catch (e) { window.renderYearlyView = render; }
+
+  window.exportYearlyExcel = async function () {
+    if (typeof XLSX === 'undefined') return;
+    const year = yearNow();
+    await load(year, false);
+    const list = await people(), MO = months(year), data = cache[year] || seed(year);
+    const wb = XLSX.utils.book_new();
+    const head = [['Employee360 — Yearly Attendance ' + year],
+      ['Attendance: Present/Late/WFH=1, Half-Day=0.5, Sick Leave / Casual Leave / Absent = 0'],
+      ['Payable: same, but Sick Leave and Casual Leave = 1 paid day'],
+      ['Divided by: ' + (basis === 'marked' ? 'days actually marked' : 'all working days of months with data')], [],
+      ['ID','Name', ...MON.map(m => m + ' %'), 'Attendance %','Att Credit','Denominator','Marked','Payable','Present','Late','Half-Day','WFH','Casual','Sick','Absent']];
+    list.forEach(emp => {
+      const pcts = []; let sa = 0, sd = 0, sp = 0, sm = 0, P = 0, L = 0, H = 0, W = 0, C = 0, S = 0, AB = 0;
+      MO.forEach(mo => {
+        const r = calc(emp, mo, data);
+        pcts.push(r.pct == null ? '-' : Math.round(r.pct) + '%');
+        if (r.marked) { sa += r.att; sd += r.den; sp += r.pay; sm += r.marked; P += r.P; L += r.L; H += r.HD; W += r.W; C += r.CL; S += r.SL; AB += r.AB; }
+      });
+      head.push([emp.id, emp.name, ...pcts, sd ? Math.round(sa / sd * 100) + '%' : '-', sa, sd, sm, sp, P, L, H, W, C, S, AB]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(head), 'Yearly ' + year);
+    XLSX.writeFile(wb, 'Yearly_Attendance_' + year + '.xlsx');
+    if (typeof showStandardToast === 'function') showStandardToast('Yearly export uses the same attendance rules.');
+  };
+
+  const prevTab = window.switchTab;
+  if (typeof prevTab === 'function') window.switchTab = function (t) { const r = prevTab.apply(this, arguments); if (t === 'yearly') setTimeout(render, 30); return r; };
+  document.addEventListener('change', e => { if (e.target && e.target.id === 'yearly-year-select') render(); }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { const m = document.getElementById('y3-modal'); if (m) { m.classList.add('hidden'); m.classList.remove('flex'); } } }, true);
+
+  const st = document.createElement('style');
+  st.textContent = '.y3-scroll{scrollbar-width:thin;scrollbar-color:#fca5a5 #fef2f2}' +
+    '.y3-scroll::-webkit-scrollbar{width:10px;height:10px}' +
+    '.y3-scroll::-webkit-scrollbar-track{background:#fef2f2;border-radius:99px}' +
+    '.y3-scroll::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#f87171,#4f46e5);border-radius:99px;border:2px solid #fef2f2;background-clip:content-box}' +
+    '.y3-accent{position:relative}.y3-accent::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#7f1d1d,#b91c1c,#4f46e5,#10b981);z-index:30}';
+  document.head.appendChild(st);
+
+  setTimeout(() => { try { if (typeof activeTab !== 'undefined' && activeTab === 'yearly') render(); } catch (e) {} }, 1000);
+})();
+</script>
 </body>
 </html>
 
